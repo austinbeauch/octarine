@@ -11,7 +11,7 @@ if __name__ == '__main__':
 -    parser.add_argument('--range', '-r', default=30, help='Length of table is days', type=int)
 -    parser.add_argument('--ccd', '-c', default=22, help='Offset so target is on this CCD (0 is the first CCD)')
 -    parser.add_argument('--geometry', '-g', default="MEGACAM_36",
-                         -                        help = 'camera geometry (see ossos.cameras for options); default is ' \
+                         -                        help = 'camera geometry (see octarine.cameras for options); default is ' \
                                                          'MEGACAM_36')
 -    parser.add_argument('--dra', default=0, help='Additional RA offset (arcmin)')
 -    parser.add_argument('--ddec', default=0, help='Additional DECA offset (arcmin)')

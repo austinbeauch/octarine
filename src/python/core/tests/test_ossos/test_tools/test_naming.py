@@ -23,7 +23,7 @@ class ProvisionalNameGeneratorTest(FileReadingTestCase):
     def parse_fits_header(self, filename="data/naming/cutout-1616690p.fits"):
         return fits.open(self.get_abs_path(filename))[0].header
 
-    @patch("ossos.storage.increment_object_counter")
+    @patch("octarine.storage.increment_object_counter")
     def test_generate_name(self, increment_object_counter):
         increment_object_counter.return_value = "01"
 
@@ -35,7 +35,7 @@ class ProvisionalNameGeneratorTest(FileReadingTestCase):
 
         increment_object_counter.assert_called_once_with(storage.MEASURE3, "O13AE")
 
-    @patch("ossos.storage.increment_object_counter")
+    @patch("octarine.storage.increment_object_counter")
     def test_generate_name_object_header_has_epoch(self, increment_object_counter):
         increment_object_counter.return_value = "01"
 
@@ -46,7 +46,7 @@ class ProvisionalNameGeneratorTest(FileReadingTestCase):
         assert_that(self.undertest.generate_name(astrom_header, fits_header),
                     equal_to("O13AE01"))
 
-    @patch("ossos.storage.increment_object_counter")
+    @patch("octarine.storage.increment_object_counter")
     def test_dry_run_generate_name(self, increment_object_counter):
         self.undertest = DryRunNameGenerator()
 

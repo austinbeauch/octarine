@@ -10,7 +10,7 @@ from ossos.gui.app import ProcessRealsApplication
 
 
 class ValidationApplicationTest(FileReadingTestCase):
-    @patch("ossos.gui.views.dialogs.show_empty_workload_dialog")
+    @patch("octarine.gui.views.dialogs.show_empty_workload_dialog")
     def test_empty_workload_triggers_dialog(self, mock_dialog):
         working_directory = self.get_abs_path("data/empty")
         output_directory = working_directory

@@ -696,7 +696,7 @@ class Query(object):
     MPC-formatted moving object detection lines.
 
     Inputs:
-        - a list of ossos.mpc.Observation instances
+        - a list of octarine.mpc.Observation instances
 
     Optional:
         - a tuple of the start and end times to be searched

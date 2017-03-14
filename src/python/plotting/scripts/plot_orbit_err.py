@@ -85,7 +85,7 @@ def ossos_residuals(version=RELEASE_VERSION, regenerate=False):
 
     ossos_mas = np.array(all_resids)
     print ossos_mas
-    print 'ossos', np.median(ossos_mas)
+    print 'octarine', np.median(ossos_mas)
 
     return ossos_mas
 

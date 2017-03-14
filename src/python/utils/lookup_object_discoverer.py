@@ -34,7 +34,7 @@ with open('/Users/michele/Desktop/13Adiscoveries.txt', 'w') as outfile:
     for discovery in discoveries['object']:
         # get older designations, which would have been assigned as the original discovery name
         former_names = designations[discovery]
-        # cf. ossos.naming.ProvisionalNameGenerator()
+        # cf. octarine.naming.ProvisionalNameGenerator()
         provisional_name = filter(lambda name: (name.startswith('O1') and name.isupper()), former_names)[0]
         outfile.write('{:<12} {:<12}'.format(discovery, provisional_name))
 

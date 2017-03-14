@@ -4,7 +4,7 @@ __author__ = 'jjk'
 
 from numpy import (array, where)
 import os
-# from ossos.parsers import read_smooth_fit
+# from octarine.parsers import read_smooth_fit
 
 path = '/Users/bannisterm/Dropbox/Papers in progress/OSSOS/First_quarter/data/'
 

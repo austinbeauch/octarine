@@ -56,7 +56,7 @@ DATA_WEB_SERVICE = 'https://www.canfar.phys.uvic.ca/data/pub/'
 VOSPACE_WEB_SERVICE = 'https://www.canfar.phys.uvic.ca/vospace/nodes/'
 TAP_WEB_SERVICE = 'http://www.cadc-ccda.hia-iha.nrc-cnrc.gc.ca/tap/sync'
 
-OSSOS_TAG_URI_BASE = 'ivo://canfar.uvic.ca/ossos'
+OSSOS_TAG_URI_BASE = 'ivo://canfar.uvic.ca/octarine'
 OBJECT_COUNT = "object_count"
 
 

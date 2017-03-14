@@ -1,6 +1,6 @@
 from unittest import TestCase
 from astropy.coordinates import SkyCoord
-from ...ossos import cameras
+from ...octarine import cameras
 
 class TestCamera(TestCase):
 

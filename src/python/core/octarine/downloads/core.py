@@ -60,7 +60,7 @@ class Downloader(object):
           uri: The URI of the apcor data file.
 
         Returns:
-          apcor: ossos.downloads.core.ApcorData
+          apcor: octarine.downloads.core.ApcorData
         """
 
         local_file = os.path.basename(uri)

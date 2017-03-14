@@ -896,7 +896,7 @@ class SourceReading(object):
         Calculates the offsets between readings' coordinate systems.
 
         Args:
-          other_reading: ossos.astrom.SourceReading
+          other_reading: octarine.astrom.SourceReading
             The reading to compare coordinate systems with.
 
         Returns:

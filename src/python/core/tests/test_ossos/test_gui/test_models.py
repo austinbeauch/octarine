@@ -245,7 +245,7 @@ class TransitionAcknowledgementModelTest(FileReadingTestCase):
         self.model.reject_current_item()
         assert_that(self.model.get_num_items_processed(), equal_to(1))
 
-    @patch("ossos.gui.models.validation.events")
+    @patch("octarine.gui.models.validation.events")
     def test_additional_change_image_events_not_sent_when_waiting(self, events_mock):
         self.use_reals_workunit()
 

@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 
 from ossos.planning import (megacam, invariable)
 from ossos import (parsers, parameters)
-# import ossos.core.ossos.planning.plotting.plot_fanciness
+# import octarine.core.octarine.planning.plotting.plot_fanciness
 import plot_objects
 
 
@@ -264,7 +264,7 @@ def build_ossos_footprint(ax, block_name, block, field_offset, plot=True, plot_c
     return ras, decs, coverage, names, ax
 
 def true_footprint(ax, blockname):
-    # with open('/Users/bannisterm/Dropbox/OSSOS/ossos-pipeline/src/ossos/core/ossos/planning/triplet_and_processing_notes/T_15B_discovery_expnums.txt') as infile:
+    # with open('/Users/bannisterm/Dropbox/OSSOS/octarine-pipeline/src/octarine/core/octarine/planning/triplet_and_processing_notes/T_15B_discovery_expnums.txt') as infile:
     #     for line in infile.readlines():
 
     # Trying a test field on T block only

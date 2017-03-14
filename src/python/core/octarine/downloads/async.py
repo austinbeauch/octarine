@@ -84,7 +84,7 @@ class DownloadRequest(object):
         Constructor.
 
         Args:
-          source_reading: ossos.astrom.SourceReading
+          source_reading: octarine.astrom.SourceReading
             The reading which will be the focus of the downloaded image.
           focus: tuple(int, int)
             The x, y coordinates that should be the focus of the downloaded

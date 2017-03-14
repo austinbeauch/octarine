@@ -40,8 +40,8 @@ class DownloadImages(unittest.TestCase):
             self.assertTrue(hdu.header.get("XOFFSET", False) is not False)
 
 class ObjectCountTest(unittest.TestCase):
-    @patch("ossos.storage.set_property")
-    @patch("ossos.storage.get_property")
+    @patch("octarine.storage.set_property")
+    @patch("octarine.storage.get_property")
     def test_increment_object_counter(self, get_property, set_property):
         get_property.return_value = "09"
 
@@ -58,8 +58,8 @@ class ObjectCountTest(unittest.TestCase):
         set_property.assert_called_once_with(node_uri, expected_tag,
                                              expected_count, ossos_base=True)
 
-    @patch("ossos.storage.set_property")
-    @patch("ossos.storage.get_property")
+    @patch("octarine.storage.set_property")
+    @patch("octarine.storage.get_property")
     def test_increment_counter_doesnt_exist(self, get_property, set_property):
         get_property.return_value = None
 
@@ -82,8 +82,8 @@ class ObjectCountTest(unittest.TestCase):
         assert_that(storage.build_counter_tag(epoch_field, dry_run=True),
                     equal_to("13AE-object_count-DRYRUN"))
 
-    @patch("ossos.storage.set_property")
-    @patch("ossos.storage.get_property")
+    @patch("octarine.storage.set_property")
+    @patch("octarine.storage.get_property")
     def test_increment_object_counter_dryrun(self, get_property, set_property):
         get_property.return_value = "02"
 

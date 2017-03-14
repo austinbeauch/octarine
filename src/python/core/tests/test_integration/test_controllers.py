@@ -99,7 +99,7 @@ class ProcessRealsControllerTest(WxWidgetTestCase, FileReadingTestCase, Director
     def get_files_to_keep(self):
         return ["1584431p15.measure3.reals.astrom", "1616681p10.measure3.reals.astrom"]
 
-    @patch("ossos.gui.controllers.mpc.Observation", spec=mpc.Observation)
+    @patch("octarine.gui.controllers.mpc.Observation", spec=mpc.Observation)
     def test_reject_disables_validation_controls(self, mock_Observation):
         comment = "test"
 
@@ -119,7 +119,7 @@ class ProcessRealsControllerTest(WxWidgetTestCase, FileReadingTestCase, Director
         self.controller.on_next_obs()
         assert_that(self.view.is_source_validation_enabled(), equal_to(True))
 
-    @patch("ossos.gui.controllers.mpc.Observation", spec=mpc.Observation)
+    @patch("octarine.gui.controllers.mpc.Observation", spec=mpc.Observation)
     def test_reject_last_item_disables_validation_controls(self, mock_Observation):
         comment = "test"
 

@@ -56,7 +56,7 @@ class SynchronizationManagerTest(unittest.TestCase):
 
         assert_that(self.sync_manager.syncable_files, has_length(0))
 
-    @patch("ossos.gui.sync.storage")
+    @patch("octarine.gui.sync.storage")
     def test_do_synchronize_copies_correct_paths(self, storage_mock):
         self.sync_manager.do_synchronize(FILE1)
         storage_mock.copy.assert_called_once_with(

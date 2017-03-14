@@ -33,10 +33,10 @@ if sys.version_info[0] > 2:
 #           continue
 #        scripts.append(os.path.join(script_dir, script))
 
-console_scripts = [ 'mkpsf = ossos.pipeline.mkpsf:main', 'step1 = ossos.pipeline.step1:main', 'mk_mopheader = ossos.pipeline.mk_mopheader:main' , 'optimize_pointings = ossos.planning.optimize_pointings:main']
-gui_scripts = [ 'validate = ossos.tools.validate:main' ]
+console_scripts = [ 'mkpsf = octarine.pipeline.mkpsf:main', 'step1 = octarine.pipeline.step1:main', 'mk_mopheader = octarine.pipeline.mk_mopheader:main' , 'optimize_pointings = octarine.planning.optimize_pointings:main']
+gui_scripts = [ 'validate = octarine.tools.validate:main' ]
 
-setup(name='ossos',
+setup(name='octarine',
       version=version,
       url='http://github.com/OSSOS/MOP',
       author='''JJ Kavelaars (jjk@uvic.ca),
@@ -45,7 +45,7 @@ setup(name='ossos',
       maintainer='M Bannister and JJ Kavelaars',
       maintainer_email='jjk@uvic.ca',
       description="Outer Solar System Origins Survey (OSSOS)",
-      long_description='See http://www.ossos-survey.org/ for science details.',
+      long_description='See http://www.octarine-survey.org/ for science details.',
       classifiers=['Intended Audience :: Science/Research',
                    'Topic :: Scientific/Engineering :: Astronomy',
                    'Development Status :: 4 - Beta',
@@ -54,7 +54,7 @@ setup(name='ossos',
                    'Environment :: X11 Applications',
                    'License :: OSI Approved :: GNU General Public License (GPL)',
                    ],
-      package_data={'ossos': ['gui/*.json']},
+      package_data={'octarine': ['gui/*.json']},
       dependency_links=['git+https://github.com/ericmandel/pyds9.git#egg=pyds9-1.8'],
       install_requires=dependencies,
       entry_points = { 'console_scripts': console_scripts,

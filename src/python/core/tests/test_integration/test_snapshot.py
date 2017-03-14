@@ -54,7 +54,7 @@ class SourceSnapshotIntegrationTest(FileReadingTestCase):
         assert_that(self.undertest.pixel_x, equal_to(self.original_pixel_x))
         assert_that(self.undertest.pixel_y, equal_to(self.original_pixel_y))
 
-    @patch("ossos.wcs.xy2sky")
+    @patch("octarine.wcs.xy2sky")
     def test_update_ra_dec(self, mock_xy2sky):
         new_ra = 2000.0
         new_dec = -11.0
@@ -104,7 +104,7 @@ class SourceSnapshotIntegrationTest(FileReadingTestCase):
             crpix1, crpix2, crval1, crval2,
             cd, pv, nord)
 
-    @patch("ossos.daophot.phot_mag")
+    @patch("octarine.daophot.phot_mag")
     def test_get_observed_magnitude(self, mock_phot_mag):
         self.undertest.get_observed_magnitude()
 

@@ -48,7 +48,7 @@ class ImageCutoutDownloader(Downloader):
         Downloads a cutout of the FITS image for a given source reading.
 
         Args:
-          reading: ossos.astrom.SourceReading
+          reading: octarine.astrom.SourceReading
             The reading which will be the focus of the downloaded image.
           focus: tuple(int, int)
             The x, y coordinates that should be the focus of the downloaded
@@ -62,7 +62,7 @@ class ImageCutoutDownloader(Downloader):
             Defaults to False.
 
         Returns:
-          cutout: ossos.downloads.data.SourceCutout
+          cutout: octarine.downloads.data.SourceCutout
         """
         logger.debug("Doing download_cutout with inputs: reading:{} focus:{} needs_apcor:{}".format(reading,
                                                                                                     focus,

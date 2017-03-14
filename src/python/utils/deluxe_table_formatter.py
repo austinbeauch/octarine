@@ -55,7 +55,7 @@ footer = r"\enddata " + "\n" + \
          r"" \
          r"H: the human operator intervened to declare the orbit security status. " \
          r"$a, e, i$ are J2000 ecliptic barycentric coordinates, with uncertainties from the covariant matrix fit " \
-         r"of \citet{Bernstein:2000p444}; full barycentric elements are available at \url{http://www.ossos-survey" \
+         r"of \citet{Bernstein:2000p444}; full barycentric elements are available at \url{http://www.octarine-survey" \
          r".org/}." \
          r"The full heliocentric orbital elements are available in electronic form from the Minor Planet Center.} " "\n" + \
          "\end{deluxetable} \n"
