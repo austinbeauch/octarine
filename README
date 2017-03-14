@@ -1,2 +1,2 @@
-MOP is a software pipeline designed to detect Kuiper belt Objects in CFHT MEGAPRIME data.
+A software pipeline designed to detect outer Solar System minor planets in CFHT MEGAPRIME data.
 It is primarily Python 2.7.
