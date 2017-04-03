@@ -8,11 +8,11 @@ import tempfile
 import time
 from datetime import datetime
 from logging import handlers
-
 import numpy
 import six
-
 import vospace
+from healpy import pixelfunc
+
 
 try:
     from astropy._erfa import d2dtf
@@ -25,6 +25,7 @@ except:
 from astropy.time import TimeString
 
 MATCH_TOLERANCE = 100.0
+HEALPIX_NSIDE = 32
 
 def config_logging(level):
     """
@@ -41,7 +42,12 @@ def config_logging(level):
     sh.formatter = logging.Formatter(fmt=log_format)
     logger.handlers = []
     logger.addHandler(sh)
-    
+
+def skycoord_to_healpix(skycoord, nside=HEALPIX_NSIDE):
+    """
+    Convert an array of RA DEC values to their HEALPIX values.
+    """
+    return pixelfunc.ang2pix(nside, skycoord.ra.radian, skycoord.dec.radian)
 
 def set_logger(args):
 
@@ -121,9 +127,16 @@ class VOFileHandler(handlers.BufferingHandler):
                 self.stream.flush()
                 _name = self.stream.name
                 self.stream.close()
+                dirname = os.path.dirname(self.filename)
+                paths = []
+                while not self.client.access(dirname) and len(dirname) > 0:
+                      paths.append(dirname)
+                      dirname = os.path.dirname(dirname)
+                while paths:
+                      self.client.mkdir(paths.pop())
                 self.client.copy(_name, self.filename)
         except Exception as ex:
-            print str(ex)
+            logging.error(str(ex))
             pass
 
     def flush(self):
@@ -265,17 +278,14 @@ class TimeMPC(TimeString):
 
         for _, strptime_fmt_or_regex, _ in subfmts:
             vals = []
-            #print strptime_fmt_or_regex
             if isinstance(strptime_fmt_or_regex, six.string_types):
                 try:
-                    #print timstr
-                    #print strptime_fmt_or_regex
                     tm = time.strptime(timestr, strptime_fmt_or_regex)
                     tm.tm_hour += int(24 * fracday)
                     tm.tm_min += int(60 * (24 * fracday - tm.tm_hour))
                     tm.tm_sec += 60 * (60 * (24 * fracday - tm.tm_hour) - tm.tm_min)
                 except ValueError as ex:
-                    print ex
+                    logging.error(ex)
                     continue
                 else:
                     vals = [getattr(tm, 'tm_' + component)

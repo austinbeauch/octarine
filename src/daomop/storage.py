@@ -8,18 +8,12 @@ import tempfile
 import Polygon
 import numpy
 import requests
-from astropy.io import ascii
-from astropy.io import fits
+from astropy.table import Table
+from astropy.io import fits, ascii
 from astropy.time import Time
-from cadcdata import CadcDataClient
-from cadcutils import net
 import util
 import vospace
 from wcs import WCS
-
-cadc_subject = net.Subject(netrc=True)
-cadc_client = CadcDataClient(cadc_subject)
-
 
 # Try and turn off warnings, only works for some releases of requests.
 try:
@@ -54,6 +48,7 @@ DBIMAGES = 'vos:cfis/solar_system/dbimages'
 PITCAIRN = 'vos:cfis/pitcairn'
 FLATS_VOSPACE = 'vos:sgwyn/flats'
 ARCHIVE = 'CFHT'
+DEFAULT_FORMAT = 'fits'
 
 
 class MyRequests(object):
@@ -154,6 +149,16 @@ class Task(object):
         else:
             return self.dependency.finished
 
+class MyPolygon(Polygon.Polygon):
+
+    @classmethod
+    def from_footprint(cls, footprint):
+        """
+        Build a Polygon object using a wcs.calc_footprint output as input.
+        """
+        polygon =  cls(numpy.concatenate((footprint, numpy.array([footprint[0]])), axis=0))
+        polygon.footprint = footprint
+        return polygon
 
 class Observation(object):
 
@@ -175,7 +180,6 @@ class Observation(object):
     def __str__(self):
         return "{}".format(self.dataset_name)
 
-
 class Artifact(object):
 
     def __init__(self, observation, version=PROCESSED_VERSION,
@@ -195,6 +199,7 @@ class Artifact(object):
         self._ext = ext
         self._version = version
         self._prefix = prefix
+        self._hdulist = None
 
     @property
     def subdir(self):
@@ -257,7 +262,9 @@ class Artifact(object):
     def get(self):
         """Get the artifact from VOSpace."""
         if not os.access(self.filename, os.F_OK):
+            logging.info("Retrieving {} from VOSpace".format(self.uri))
             return copy(self.uri, self.filename)
+        return 0
 
     @property
     def filename(self):
@@ -266,22 +273,78 @@ class Artifact(object):
     def put(self):
         """Put the artifact to VOSpace."""
         # first ensure the path exists
+        logging.info("Checking that path {} exists".format(self.uri))
         make_path(self.uri)
-        copy(self.filename, self.uri)
+        logging.info("Copying {} to {}".format(self.filename, self.uri))
+        return copy(self.filename, self.uri)
 
     def delete(self):
         """Delete a file from VOSpace"""
         delete(self.uri)
 
+class FitsArtifact(Artifact):
 
-class Image(Artifact):
+    @property
+    def hdulist(self):
+        if self._hdulist is not None:
+            return self._hdulist
+        if not os.access(self.filename, os.R_OK):
+            self.get()
+        self._hdulist = fits.open(self.filename)
+        return self._hdulist
+
+    @hdulist.setter
+    def hdulist(self, hdulist):
+        self._hdulist = hdulist
+
+
+
+class FitsTable(FitsArtifact):
+
+    def __init__(self, *args, **kwargs):
+        super(FitsTable, self).__init__(*args, **kwargs)
+        self._table = None
+
+    @property
+    def table(self):
+        if self._table is None:
+            if not os.access(self.filename, os.R_OK):
+                self.get()
+            self._table = Table.read(self.filename)
+        return self._table
+
+    @table.setter
+    def table(self, table):
+        self._table = table
+
+    def write(self):
+        """
+        Write the current data in the table to disk.
+        """
+        if self.table.meta['EXTNAME'] in self.hdulist:
+            del(self.hdulist[self.table.meta['EXTNAME']])
+        self.hdulist.append(fits.table_to_hdu(self.table))
+        self.hdulist.writeto(self.filename, clobber=True)
+
+
+class Image(FitsArtifact):
 
     def __init__(self, *args, **kwargs):
         super(Image, self).__init__(*args, **kwargs)
         self._header = None
-        self._hdulist = None
         self._wcs = None
+        self._flat_field_name = None
         self._flat_field = None
+        self._footprint = None
+    
+    @property
+    def ccd(self):
+        return self._ccd
+
+    @ccd.setter
+    def ccd(self, ccd):
+        self._wcs = self._header = self._footer = None
+        self._ccd = ccd
 
     @property
     def filename(self):
@@ -293,13 +356,14 @@ class Image(Artifact):
                                           self.ccd)
 
     @property
-    def hdulist(self):
-        if self._hdulist is not None:
-            return self._hdulist
-        if not os.access(self.filename, os.R_OK):
-            self.get()
-        self._hdulist = fits.open(self.filename)
-        return self._hdulist
+    def header(self):
+        if self.ccd is None:
+            ext = 0
+        else:
+            ext = self.ccd + 1
+        if self._header is None:
+            self._header = Header(self.observation, version=self.version).headers[ext]
+        return self._header
 
     @property
     def wcs(self):
@@ -311,6 +375,19 @@ class Image(Artifact):
                 for header in self.header[1:]:
                     self._wcs.append(WCS(header))
         return self._wcs
+
+    @property
+    def footprint(self):
+        #if self._footprint is not None:
+        #    return self._footprint
+        self._footprint = self.wcs.calc_footprint()
+        self._footprint = numpy.concatenate((self._footprint, numpy.array([self._footprint[0]])), axis=0)
+        return self._footprint
+
+
+    @property
+    def polygon(self):
+        return MyPolygon(self.footprint)
 
     @property
     def uri(self):
@@ -331,42 +408,7 @@ class Image(Artifact):
 
         return "{}/{}{}{}{}[{}]".format(uri,
                                         self.prefix, self.observation, self.version, self.ext,
-                                        self.ccd)
-
-    @property
-    def header_artifact(self):
-        """
-        Get an artifact that references the header of this image artifact.
-        :return:
-         :rtype: Artifact
-        """
-        return Artifact(self.observation, version=self.version, ext=HEADER_EXT)
-
-    @property
-    def header(self):
-        """
-        Retrieve the image header using the symbolic link in dbimages area.
-
-        :rtype : list of astropy.io.fits.Header objects.
-        """
-        if self._header is not None:
-            return self._header
-        self.header_artifact.get()
-        header_str_list = re.split('END      \n', open(self.header_artifact.filename, 'r').read())
-
-        # make the first entry in the list a Null
-        headers = []
-        for header_str in header_str_list[:-1]:
-            header = fits.Header.fromstring(header_str, sep='\n')
-            if len(headers) == 0 and not header.get('SIMPLE', False):
-                headers.append(fits.PrimaryHDU().header)
-                headers[-1]["SOURCE"] = self.header_artifact.uri
-            headers.append(header)
-        if self.ccd is None:
-            self._header = headers
-        else:
-            self._header = headers[self.ccd+1]
-        return self._header
+                                        self.ccd+1)
 
     @property
     def flat_field(self):
@@ -377,7 +419,7 @@ class Image(Artifact):
         if self._flat_field is None:
             self._flat_field = Image(Observation(self.flat_field_name, dbimages=FLATS_VOSPACE),
                                      subdir="",
-                                     ext="",
+                                     ext=".fits",
                                      version="",
                                      ccd=self.ccd)
         return self._flat_field
@@ -385,14 +427,17 @@ class Image(Artifact):
     @property
     def flat_field_name(self):
 
+        if self._flat_field_name is not None:
+            return self._flat_field_name
         if self.ccd is not None:
-            return self.header.get('FLAT', None)
+            self._flat_field_name = self.header.get('FLAT', None)
         else:
             for header in self.header:
-                flat_field_name = (header.get("FLAT", None))
-                if flat_field_name is not None:
-                    return flat_field_name
-        return "weight.fits"
+                self._flat_field_name = (header.get("FLAT", None))
+        if self._flat_field_name is None:
+             self._flat_field_name = "weight.fits"
+        self._flat_field_name = self._flat_field_name.rstrip(".fits")
+        return self._flat_field_name
 
     @property
     def fwhm(self):
@@ -400,6 +445,7 @@ class Image(Artifact):
         filename = os.path.basename(uri)
         copy(uri, filename)
         return open(filename).read()
+
 
     def overlaps(self, minimum_time=2.0 / 24.0, runids=RUNIDS):
         """Do a QUERY on the TAP service for all observations that are part of OSSOS (*P05/*P016)
@@ -412,62 +458,47 @@ class Image(Artifact):
 
         @return Table
         """
-        a = self.header
-        a['NAXIS1'] = 2112
-        a['NAXIS2'] = 4644
-        footprint = WCS(a).calc_footprint()
-        footprint = numpy.concatenate((footprint, numpy.array([footprint[0]])), axis=0)
-        this_polygon = Polygon.Polygon(footprint)
-        polygon_str = "POLYGON('ICRS GEOCENTER', " + ", ".join([str(x) for x in footprint.ravel()]) + ")"
 
-        data = dict(QUERY=(" SELECT Observation.observationID as collectionID "
-                           " FROM caom2.Observation AS Observation "
-                           " JOIN caom2.Plane AS Plane "
-                           " ON Observation.obsID = Plane.obsID "
-                           " WHERE Observation.collection = 'CFHT'  "
-                           " AND Plane.calibrationLevel > 0 "
-                           " AND Plane.energy_bandpassName LIKE 'r.%'  "),
-                    REQUEST="doQuery",
-                    LANG="ADQL",
-                    FORMAT="tsv")
+        query = ( " SELECT Observation.observationID as collectionID "
+                  " FROM caom2.Observation AS Observation "
+                  " JOIN caom2.Plane AS Plane "
+                  " ON Observation.obsID = Plane.obsID "
+                  " WHERE Observation.collection = 'CFHT'  "
+                  " AND Plane.calibrationLevel = 1 "
+                  " AND Plane.energy_bandpassName LIKE 'r.%'  ")
 
         # Restrict the overlap search to particular runids
         if len(runids) > 0:
-            data["QUERY"] += " AND ( "
+            query += " AND ( "
             sep = ""
             for runid in runids:
-                data["QUERY"] += " Observation.proposal_id LIKE {} ".format(runid)
-                data["QUERY"] += sep
+                query += sep+" Observation.proposal_id LIKE '{}' ".format(runid)
                 sep = " OR "
-            data["QUERY"] += " ) "
+            query += " ) "
 
-        data["QUERY"] += " AND INTERSECTS( {}, Plane.position_bounds ) = 1 ".format(polygon_str)
-        mjdate = a.get('MJDATE', None)
+
+        polygon_str = "POLYGON('ICRS GEOCENTER', " + ", ".join([str(x) for x in self.footprint.ravel()]) + ")"
+
+        query += " AND INTERSECTS( {}, Plane.position_bounds ) = 1 ".format(polygon_str)
+        mjdate = self.header.get('MJDATE', None)
         if mjdate is not None:
-            data["QUERY"] += " AND ( Plane.time_bounds_lower < {} ".format(mjdate - minimum_time)
-            data["QUERY"] += " OR  Plane.time_bounds_upper > {} ) ".format(mjdate + minimum_time)
+            query += " AND ( Plane.time_bounds_lower < {} ".format(mjdate - minimum_time)
+            query += " OR  Plane.time_bounds_upper > {} ) ".format(mjdate + minimum_time)
 
-        result = requests.get(TAP_WEB_SERVICE, params=data, verify=False)
-        logging.debug("Doing TAP Query using url: %s" % (str(result.url)))
-
-        table_reader = ascii.get_reader(Reader=ascii.Basic)
-        table_reader.header.splitter.delimiter = '\t'
-        table_reader.data.splitter.delimiter = '\t'
-        table = table_reader.read(result.text)
-        logging.debug("Found these temporally separate but spatially overlapping images: \n" + str(table))
-
+        table = tap_query(query)
         overlaps = []
         for collectionID in table['collectionID']:
-            headers = Image(Observation(collectionID)).header
-            for header in headers:
-                if header is None:
-                    continue
-                footprint = WCS(header).calc_footprint()
-                footprint = numpy.concatenate((footprint, numpy.array([footprint[0]])), axis=0)
-                p = Polygon.Polygon(footprint)
-                if p.overlaps(this_polygon):
-                    overlaps.append([collectionID, header.get('EXTVER', -1)])
-
+            try:
+                headers = Header(Observation(collectionID))
+                for header in headers.headers:
+                    if header.get('EXTVER', None) is None:
+                        continue
+                    headers.ccd = int(header['EXTVER'])
+                    if headers.polygon.overlaps(self.polygon):
+                        overlaps.append([collectionID, headers.ccd])
+            except Exception as ex:
+                logging.debug("ERROR processing {}: {}".format(collectionID, ex))
+                continue
         logging.debug("Found these overlapping CCDs\n" + str(overlaps))
         return overlaps
 
@@ -739,6 +770,38 @@ def reset_datasec(cutout, datasec, naxis1, naxis2):
     return "[{}:{},{}:{}]".format(datasec[0], datasec[1], datasec[2], datasec[3])
 
 
+class Header(Image):
+
+    def __init__(self, *args, **kwargs):
+        if kwargs.get('ext', None) is None:
+            kwargs['ext'] = HEADER_EXT
+        super(Header, self).__init__(*args, **kwargs)
+        self._headers = None
+
+    @property
+    def headers(self):
+        if self._headers is not None:
+            return self._headers
+        if not os.access(self.filename, os.R_OK):
+            self.get()
+
+        header_str_list = re.split('END      \n', open(self.filename, 'r').read())
+
+        # make the first entry in the list a Null
+        self._headers = []
+        for header_str in header_str_list[:-1]:
+            header = fits.Header.fromstring(header_str, sep='\n')
+            if len(self._headers) == 0 and not header.get('SIMPLE', False):
+                self._headers.append({})
+                self._headers[0]["SOURCE"] = self.uri
+            self._headers.append(header)
+        return self._headers
+
+    @property
+    def header(self):
+        return self.headers[self.ccd+1]
+                            
+
 def make_path(uri):
     """Build a path, with recursion. Don't catch errors."""
     mkdir(os.path.dirname(uri))
@@ -929,7 +992,26 @@ def copy(source, destination):
         try:
             return vospace.client.copy(source, destination)
         except Exception as ex:
+            if ex.errno == errno.ENOENT:
+                raise ex
             count += 1
             logging.debug(str(ex))
             if count > MAX_RETRY:
                 raise ex
+
+def tap_query(query):
+
+        data = dict(QUERY=query,
+                    REQUEST="doQuery",
+                    LANG="ADQL",
+                    FORMAT="tsv")
+
+        logging.debug("QUERY: {}".format(data["QUERY"]))
+        result = requests.get(TAP_WEB_SERVICE, params=data, verify=False)
+        logging.debug("Doing TAP Query using url: %s" % (str(result.url)))
+
+        table_reader = ascii.get_reader(Reader=ascii.Basic)
+        table_reader.header.splitter.delimiter = '\t'
+        table_reader.data.splitter.delimiter = '\t'
+        table = table_reader.read(result.text)
+        return table

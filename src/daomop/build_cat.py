@@ -36,7 +36,7 @@ def run(expnum, ccd, version, prefix, dry_run, force):
             sex_config = os.getenv('SEX_CONFIG', '')
             logging.info("Using config: {}".format(os.path.join(sex_config, 'pre_psfex.sex')))
             ldac_catalog = storage.Artifact(observation, ccd=ccd, ext=".ldac")
-            cmd = ['/usr/local/bin/sex', image.filename,
+            cmd = ['/usr/bin/sex', image.filename,
                    '-c', os.path.join(sex_config, 'pre_psfex.sex'),
                    '-CATALOG_NAME', ldac_catalog.filename,
                    '-WEIGHT_IMAGE', image.flat_field.filename,
@@ -54,15 +54,15 @@ def run(expnum, ccd, version, prefix, dry_run, force):
             # Build a source catalog using the PSF model.
             fits_catalog = storage.Artifact(observation, ccd=ccd, ext=".cat.fits")
             psf = storage.Artifact(observation, ccd=ccd, ext=".psf")
-            cmd = ['sex',
+            cmd = ['/usr/bin/sex',
                    '-c', os.path.join(sex_config, 'ml.sex'),
                    '-WEIGHT_IMAGE', image.flat_field.filename,
                    '-CATALOG_NAME', fits_catalog.filename,
                    '-PSF_NAME', psf.filename,
-                   '-MAG_ZEROPOINT', image.zeropoint,
+                   '-MAG_ZEROPOINT', str(image.zeropoint),
                    image.filename]
-            logging.info(subprocess.check_output(cmd,
-                                                 stderr=subprocess.STDOUT))
+            logging.info(" ".join(cmd))
+            logging.info(subprocess.check_output(cmd, stderr=subprocess.STDOUT))
 
             if dry_run:
                 return
@@ -76,7 +76,9 @@ def run(expnum, ccd, version, prefix, dry_run, force):
             logging.error(str(e))
             message = str(e)
 
+    print "Setting processing status"
     storage.set_status(task, prefix, expnum, version, ccd, message)
+    print "Done"
 
     return
 
@@ -96,10 +98,10 @@ def main():
                         action="store",
                         default="vos:cfis/solar_system/dbimages",
                         help='vospace dbimages containerNode')
-    parser.add_argument("dataset_name",
+    parser.add_argument("expnum",
                         type=int,
                         nargs='+',
-                        help="dataset_name(s) to process")
+                        help="expnum(s) to process")
     parser.add_argument("--dry-run",
                         action="store_true",
                         help="DRY RUN, don't copy results to VOSpace, implies --force")

@@ -1,9 +1,11 @@
 """Mark the stationary sources in a given source catalog by matching with other source catalogs"""
 import sys
-
-from src.daomop import storage
-from src.daomop import util
+import errno
+import storage
+import util
 from astropy.io import fits
+from astropy.coordinates import SkyCoord
+from astropy.table import vstack
 import numpy
 import argparse
 import logging
@@ -42,32 +44,21 @@ def run(expnum, ccd, prefix, version, dry_run, force):
 
     with storage.LoggingManager(task, prefix, expnum, ccd, version, dry_run):
         try:
-            if dependency is not None and not storage.get_status(dependency, prefix, expnum, "p", ccd=ccd):
+            if dependency is not None and not storage.get_status(dependency, prefix, 
+                                                                 expnum, "p", ccd=ccd):
                 raise IOError("{} not yet run for {}".format(dependency, expnum))
 
             # get catalog from the vospace storage area
             logging.info("Getting fits image from VOSpace")
 
             logging.info("Running match on %s %d" % (expnum, ccd))
-            filename = match(expnum, ccd)
+            catalog = match(expnum, ccd)
+            split_to_hpx(catalog)
 
             if dry_run:
                 return
 
             # place the results into VOSpace
-            dest = storage.dbimages_uri(expnum, ccd, prefix=prefix, version=version, ext='.cat.fits')
-            source = filename
-            count = 0
-            with open(source, 'r'):
-                while True:
-                    count += 1
-                    try:
-                        logging.info("Attempt {} to copy {} -> {}".format(count, source, dest))
-                        storage.copy(source, dest)
-                        break
-                    except Exception as ex:
-                        if count > 10:
-                            raise ex
             logging.info(message)
         except Exception as e:
             message = str(e)
@@ -75,36 +66,86 @@ def run(expnum, ccd, prefix, version, dry_run, force):
 
         storage.set_status(task, prefix, expnum, version, ccd=ccd, status=message)
 
+NSIDE = 32
+def split_to_hpx(catalog, nside=NSIDE):
+
+    number_of_pix = 12 * nside**2
+    field_size = len(str(number_of_pix))
+    table = catalog.table
+    dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
+    image = storage.Image(catalog.observation, ccd=catalog.ccd, version=catalog.version)
+    catalog.table['dataset_name'] = len(catalog.table)*[dataset_name]
+    catalog.table['mid_mjdate'] = image.header['MJDATE'] + image.header['EXPTIME']/24./3600.0
+
+    ra_dec = SkyCoord(catalog.table['X_WORLD'], 
+                      catalog.table['Y_WORLD'],
+                      unit=('degree', 'degree'))
+    healpix = util.skycoord_to_healpix(ra_dec, nside=NSIDE)
+    for pix in numpy.unique(healpix):
+        hpx_dataset_name = ("{"+":0{:d}".format(field_size)+"}").format(pix)
+        observation = storage.Observation(hpx_dataset_name, dbimages="vos:cfis/solar_system/catalogs/")
+        healpix_catalog = storage.FitsTable(observation, 
+                                            ccd=None, 
+                                            subdir="", 
+                                            version='_cat', 
+                                            prefix='hpx_', 
+                                            ext='.fits')
+        print healpix
+        print len(catalog.table[healpix==pix])
+        try:
+            healpix_catalog.get()
+            print dataset_name, len(healpix_catalog.table)
+            healpix_catalog.table = healpix_catalog.table[healpix_catalog.table['dataset_name']!=dataset_name]
+            print dataset_name, len(healpix_catalog.table), len(catalog.table[healpix==pix])
+            healpix_catalog.table = vstack([healpix_catalog.table, catalog.table[healpix==pix]])
+            print dataset_name, len(healpix_catalog.table)
+        except Exception as ex:
+            if ex.errno == errno.ENOENT:
+                healpix_catalog.hdulist=fits.HDUList()
+                healpix_catalog.hdulist.append(catalog.hdulist[0])
+                healpix_catalog.table = catalog.table[healpix==pix]
+            else:
+                raise(ex)
+        healpix_catalog.write()
+        healpix_catalog.put()
 
 def match(expnum, ccd):
 
-    match_list = storage.footprint_search(expnum, ccd)
-
+    observation = storage.Observation(expnum)
+    image = storage.Image(observation, ccd=ccd)
+    match_list = image.overlaps()
     if len(match_list) == 0:
         raise LookupError("No cataloges to match {}p{:02d}.cat.fits against.".format(expnum, ccd))
-
-    this_catalog = fits.open(storage.get_file(expnum, ccd, ext='.cat.fits'))
+    catalog = storage.FitsTable(observation, ccd=ccd, ext='.cat.fits')
     # reshape the position vectors from the catalogues for use in match_lists
-    p1 = numpy.transpose((this_catalog['OBJECTS'].data['X_WORLD'],
-                          this_catalog['OBJECTS'].data['Y_WORLD']))
-    matches = numpy.zeros(len(this_catalog['OBJECTS'].data['X_WORLD']))
-
+    p1 = numpy.transpose((catalog.table['X_WORLD'],
+                          catalog.table['Y_WORLD']))
+    matches = numpy.zeros(len(catalog.table['X_WORLD']))
+    overlaps = numpy.zeros(len(catalog.table['X_WORLD']))
     for match_set in match_list:
         logging.info("trying to match against catalog {}p{:02d}.cat.fits".format(match_set[0], match_set[1]))
         try:
-            match_catalog = fits.open(storage.get_file(match_set[0], match_set[1], ext='.cat.fits'))
+            match_catalog = storage.FitsTable(storage.Observation(match_set[0]), ccd=match_set[1], ext='.cat.fits')
+            match_image = storage.Image(storage.Observation(match_set[0]), ccd=match_set[1])
+        except Exception as ex:
+            logging.error(ex)
+            logging.error(type(ex))
+            continue
         except OSError as ioe:
             logging.debug(str(ioe))
             continue
+            
+        overlaps += [match_image.polygon.isInside(row['X_WORLD'], row['Y_WORLD']) for row in catalog.table]
         # reshape the position vectors from the catalogues for use in match_lists
-        p2 = numpy.transpose((match_catalog['OBJECTS'].data['X_WORLD'],
-                              match_catalog['OBJECTS'].data['Y_WORLD']))
+        p2 = numpy.transpose((match_catalog.table['X_WORLD'],
+                              match_catalog.table['Y_WORLD']))
         idx1, idx2 = util.match_lists(p1, p2, tolerance=1.0/3600.0)
         matches[idx2.data[~idx2.mask]] += 1
 
-    this_catalog['OBJECTS'] = add_column(this_catalog['OBJECTS'], column_name='MATCHES', column_format='I', data=matches)
-    this_catalog.writeto('junk.cat.fits')
-    return 'junk.cat.fits'
+    catalog.table['MATCHES'] = matches
+    catalog.table['OVERLAPS'] = overlaps
+
+    return catalog
 
 
 def main():
@@ -146,7 +187,7 @@ def main():
     version = 'p'
 
     exit_code = 0
-    for expnum in args.expnum:
+    for expnum in args.dataset_name:
         if args.ccd is None:
            if int(expnum) < 1785619:
                # Last exposures with 36 CCD Megaprime

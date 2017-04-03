@@ -4,20 +4,12 @@ from daomop.__version__ import version
 
 from setuptools import setup, find_packages
 
-dependencies = ['pyraf >= 2.1.1',
-                'requests >= 2.7',
+dependencies = ['requests >= 2.7',
                 'astropy >= 0.2.5',
                 'vos >= 2.0',
-                'ephem',
                 'numpy >= 1.6.1',
-                'wxPython >= 3.0.0.0',
-                'matplotlib',
                 'Polygon2',
-                'd2to1 >= 0.2.10',
-                'scipy',
-                'uncertainties',
-                'pyds9 >= 1.8',
-                'mp_ephem']
+                'scipy']
 
 
 if sys.version_info[0] > 2:
@@ -33,19 +25,17 @@ if sys.version_info[0] > 2:
 #           continue
 #        scripts.append(os.path.join(script_dir, script))
 
-console_scripts = [ 'mkpsf = daomop.pipeline.mkpsf:main', 'step1 = daomop.pipeline.step1:main', 'mk_mopheader = daomop.pipeline.mk_mopheader:main' , 'optimize_pointings = daomop.planning.optimize_pointings:main']
-gui_scripts = [ 'validate = daomop.validate.validate:main' ]
+console_scripts = [ 'populate = daomop.populate:main', 'stationary = daomop.stationary:main', 'build_cat = daomop.build_cat:main']
 
 setup(name='daomop',
       version=version,
-      url='http://github.com/OSSOS/MOP',
+      url='http://github.com/ijiraq/daomop',
       author='''JJ Kavelaars (jjk@uvic.ca),
-              Michele Bannister (micheleb@uvic.ca),
-              David Rusk''',
+              Michele Bannister (micheleb@uvic.ca)''',
       maintainer='M Bannister and JJ Kavelaars',
       maintainer_email='jjk@uvic.ca',
-      description="Outer Solar System Origins Survey (OSSOS)",
-      long_description='See http://www.daomop-survey.org/ for science details.',
+      description="Dominion Astrophysical Observatory Moving Object Pipeline: daomop",
+      long_description='See github repp',
       classifiers=['Intended Audience :: Science/Research',
                    'Topic :: Scientific/Engineering :: Astronomy',
                    'Development Status :: 4 - Beta',
@@ -54,10 +44,7 @@ setup(name='daomop',
                    'Environment :: X11 Applications',
                    'License :: OSI Approved :: GNU General Public License (GPL)',
                    ],
-      package_data={'daomop': ['gui/*.json']},
-      dependency_links=['git+https://github.com/ericmandel/pyds9.git#egg=pyds9-1.8'],
       install_requires=dependencies,
-      entry_points = { 'console_scripts': console_scripts,
-                       'gui_scripts': gui_scripts },
+      entry_points = { 'console_scripts': console_scripts},
       packages=find_packages(exclude=['tests',])
       )
