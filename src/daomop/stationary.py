@@ -80,25 +80,22 @@ def split_to_hpx(catalog, nside=NSIDE):
     ra_dec = SkyCoord(catalog.table['X_WORLD'], 
                       catalog.table['Y_WORLD'],
                       unit=('degree', 'degree'))
-    healpix = util.skycoord_to_healpix(ra_dec, nside=NSIDE)
+    healpix = util.skycoord_to_healpix(ra_dec, nside=nside)
     for pix in numpy.unique(healpix):
         hpx_dataset_name = ("{"+":0{:d}".format(field_size)+"}").format(pix)
+        skycoord = util.healpix_to_skycoord(pix, nside=nside)
+        hpx_dataset_name = "HPX_{}_RA_{:4.1f}_DEC_{:+4.1f}".format(hpx_dataset_name, skycoord.ra.degree, skycoord.dec.degree)
         observation = storage.Observation(hpx_dataset_name, dbimages="vos:cfis/solar_system/catalogs/")
         healpix_catalog = storage.FitsTable(observation, 
                                             ccd=None, 
                                             subdir="", 
                                             version='_cat', 
-                                            prefix='hpx_', 
+                                            prefix=None, 
                                             ext='.fits')
-        print healpix
-        print len(catalog.table[healpix==pix])
         try:
             healpix_catalog.get()
-            print dataset_name, len(healpix_catalog.table)
             healpix_catalog.table = healpix_catalog.table[healpix_catalog.table['dataset_name']!=dataset_name]
-            print dataset_name, len(healpix_catalog.table), len(catalog.table[healpix==pix])
             healpix_catalog.table = vstack([healpix_catalog.table, catalog.table[healpix==pix]])
-            print dataset_name, len(healpix_catalog.table)
         except Exception as ex:
             if ex.errno == errno.ENOENT:
                 healpix_catalog.hdulist=fits.HDUList()
@@ -114,8 +111,6 @@ def match(expnum, ccd):
     observation = storage.Observation(expnum)
     image = storage.Image(observation, ccd=ccd)
     match_list = image.overlaps()
-    if len(match_list) == 0:
-        raise LookupError("No cataloges to match {}p{:02d}.cat.fits against.".format(expnum, ccd))
     catalog = storage.FitsTable(observation, ccd=ccd, ext='.cat.fits')
     # reshape the position vectors from the catalogues for use in match_lists
     p1 = numpy.transpose((catalog.table['X_WORLD'],

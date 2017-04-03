@@ -12,7 +12,7 @@ import numpy
 import six
 import vospace
 from healpy import pixelfunc
-
+from astropy.coordinates import SkyCoord
 
 try:
     from astropy._erfa import d2dtf
@@ -43,11 +43,18 @@ def config_logging(level):
     logger.handlers = []
     logger.addHandler(sh)
 
+def healpix_to_skycoord(pix, nside=HEALPIX_NSIDE):
+    """
+    given a healpix pix and the nside level of the healpix return the SkyCoord representing the centre of the field
+    """
+    ra, dec = pixelfunc.pix2ang(nside, pix, lonlat=True)
+    return SkyCoord(ra, dec, unit='degree')
+
 def skycoord_to_healpix(skycoord, nside=HEALPIX_NSIDE):
     """
     Convert an array of RA DEC values to their HEALPIX values.
     """
-    return pixelfunc.ang2pix(nside, skycoord.ra.radian, skycoord.dec.radian)
+    return pixelfunc.ang2pix(nside, skycoord.ra.degree, skycoord.dec.degree, lonlat=True)
 
 def set_logger(args):
 

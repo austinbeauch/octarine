@@ -76,9 +76,7 @@ def run(expnum, ccd, version, prefix, dry_run, force):
             logging.error(str(e))
             message = str(e)
 
-    print "Setting processing status"
     storage.set_status(task, prefix, expnum, version, ccd, message)
-    print "Done"
 
     return
 
