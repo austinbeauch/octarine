@@ -6,10 +6,10 @@ import util
 import storage
 from storage import archive_url
 from storage import Observation
-from storage import Image
+from storage import Image, Header
 from storage import make_path
 from storage import make_link
-from storage import cfis_uri
+from storage import pitcairn_uri
 from storage import isfile
 
 
@@ -32,24 +32,26 @@ def run(dataset_name):
 
     logging.debug("Linking to RAW header")
     source = archive_url(dataset_name, version=version, fhead='true')
-    make_link(source, artifact.header_artifact.uri)
+    header = Header(observation, version=version)
+    make_link(source, header.uri)
 
     logging.debug("Making link between PROC'd image and dbimages")
     version = 'p'
     ext = '.fits.fz'
     artifact = Image(observation, version=version, ext=ext)
-    # Source is either CFIS processing or archive URL
-    source = cfis_uri(dataset_name)
+    # Source is either PITCAIRN processing or CFHT archive URL
+    source = pitcairn_uri(dataset_name)
     if not isfile(source):
         source = archive_url(dataset_name, version)
     make_link(source, artifact.uri)
 
     logging.debug("Link up the header")
-    # Can be the CFIS produced header or the one in the archive
+    # Can be the CFHTSG header or the one in the CFHT archive one.
     source = archive_url(dataset_name, version, ext='.head', archive='CFHTSG')
+    header = Header(observation, version=version)
     if not isfile(source):
         source = archive_url(dataset_name, version, ext='', fhead='true')
-    make_link(source, artifact.header_artifact.uri)
+    make_link(source, header.uri)
 
     return True
 

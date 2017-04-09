@@ -962,7 +962,7 @@ def archive_url(dataset_name, version, ext=IMAGE_EXT, archive=ARCHIVE, **kwargs)
     return url
 
 
-def cfis_uri(dataset_name):
+def pitcairn_uri(dataset_name):
     return "{}/{}{}{}".format(PITCAIRN, dataset_name, PROCESSED_VERSION, IMAGE_EXT)
 
 
