@@ -12,6 +12,9 @@ import util
 task = 'build_cat'
 dependency = None
 
+__PATH__ = os.path.dirname(__file__)
+SEX_CONFIG = os.path.join(__PATH__, 'config')
+os.environ['SEX_CONFIG'] = SEX_CONFIG
 
 def run(expnum, ccd, version, prefix, dry_run, force):
 
@@ -33,11 +36,10 @@ def run(expnum, ccd, version, prefix, dry_run, force):
 
             # Build the PSF model input catalog
             logging.info("Building PSF input catalog")
-            sex_config = os.getenv('SEX_CONFIG', '')
-            logging.info("Using config: {}".format(os.path.join(sex_config, 'pre_psfex.sex')))
+            logging.info("Using config: {}".format(os.path.join(SEX_CONFIG, 'pre_psfex.sex')))
             ldac_catalog = storage.Artifact(observation, ccd=ccd, ext=".ldac")
             cmd = ['/usr/bin/sex', image.filename,
-                   '-c', os.path.join(sex_config, 'pre_psfex.sex'),
+                   '-c', os.path.join(SEX_CONFIG, 'pre_psfex.sex'),
                    '-CATALOG_NAME', ldac_catalog.filename,
                    '-WEIGHT_IMAGE', image.flat_field.filename,
                    '-MAG_ZEROPOINT', str(image.zeropoint)]
@@ -46,7 +48,7 @@ def run(expnum, ccd, version, prefix, dry_run, force):
 
             # Build the PSF model
             cmd = ['psfex', ldac_catalog.filename,
-                   '-c', os.path.join(sex_config, 'default.psfex')]
+                   '-c', os.path.join(SEX_CONFIG, 'default.psfex')]
             logging.info(" ".join(cmd))
             logging.info(subprocess.check_output(cmd,
                                                  stderr=subprocess.STDOUT))
@@ -55,7 +57,7 @@ def run(expnum, ccd, version, prefix, dry_run, force):
             fits_catalog = storage.Artifact(observation, ccd=ccd, ext=".cat.fits")
             psf = storage.Artifact(observation, ccd=ccd, ext=".psf")
             cmd = ['/usr/bin/sex',
-                   '-c', os.path.join(sex_config, 'ml.sex'),
+                   '-c', os.path.join(SEX_CONFIG, 'ml.sex'),
                    '-WEIGHT_IMAGE', image.flat_field.filename,
                    '-CATALOG_NAME', fits_catalog.filename,
                    '-PSF_NAME', psf.filename,
