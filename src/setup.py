@@ -46,5 +46,6 @@ setup(name='daomop',
                    ],
       install_requires=dependencies,
       entry_points = { 'console_scripts': console_scripts},
-      packages=find_packages(exclude=['tests',])
+      packages=find_packages(exclude=['tests',]),
+      package_data={'daomop': ['config/*' ]}
       )
