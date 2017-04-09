@@ -42,6 +42,10 @@ def run(dataset_name):
     # Source is either PITCAIRN processing or CFHT archive URL
     source = pitcairn_uri(dataset_name)
     if not isfile(source):
+        # Try pitcairn wihtout the .fz
+        source = pitcairn_uri(dataset_name, ext=".fits")
+    if not isfile(source):
+        # Use the CFHT Archive version
         source = archive_url(dataset_name, version)
     make_link(source, artifact.uri)
 
@@ -77,6 +81,7 @@ def main():
                         action="store_true")
     parser.add_argument("--debug", "-d",
                         action="store_true")
+    parser.add_argument("--pitcairn", default="vos:cfis/pitcairn", action="store", help="vospace containing pitcairn processed images")
 
     cmd_line = " ".join(sys.argv)
     args = parser.parse_args()
@@ -85,6 +90,7 @@ def main():
     logging.info("Started {}".format(cmd_line))
 
     storage.DBIMAGES = args.dbimages
+    storage.PITCAIRN = args.pitcairn
 
     exit_code = 0
     for expnum in args.expnum:
