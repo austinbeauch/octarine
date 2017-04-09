@@ -162,7 +162,9 @@ class MyPolygon(Polygon.Polygon):
 
 class Observation(object):
 
-    def __init__(self, dataset_name, dbimages=DBIMAGES):
+    def __init__(self, dataset_name, dbimages=None):
+        if dbimages is None:
+            dbimages = DBIMAGES
         self.dataset_name = dataset_name
         self.dbimages = dbimages
 
@@ -834,6 +836,7 @@ def delete(uri):
 
 
 def make_link(source, destination):
+    logging.debug("Linking {} to {}".format(source, destination))
     return vospace.client.link(source, destination)
 
 
@@ -841,7 +844,9 @@ def listdir(directory, force=False):
     return vospace.client.listdir(directory, force=force)
 
 
-def list_dbimages(dbimages=DBIMAGES):
+def list_dbimages(dbimages=None):
+    if dbimages is None:
+        dbimages=DBIMAGES
     return listdir(dbimages)
 
 
@@ -962,8 +967,10 @@ def archive_url(dataset_name, version, ext=IMAGE_EXT, archive=ARCHIVE, **kwargs)
     return url
 
 
-def pitcairn_uri(dataset_name):
-    return "{}/{}{}{}".format(PITCAIRN, dataset_name, PROCESSED_VERSION, IMAGE_EXT)
+def pitcairn_uri(dataset_name, ext=None):
+    if ext is None:
+        ext=IMAGE_EXT
+    return "{}/{}{}{}".format(PITCAIRN, dataset_name, PROCESSED_VERSION, ext)
 
 
 def isfile(uri):
@@ -974,6 +981,7 @@ def isfile(uri):
     :type uri: str
     :return:
     """
+    logging.debug("Checking if {} exists.".format(uri))
     if uri.startswith(VOS_PROTOCOL):
         return vospace.client.isfile(uri)
     try:
