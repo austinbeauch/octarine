@@ -149,6 +149,7 @@ class Task(object):
         else:
             return self.dependency.finished
 
+
 class MyPolygon(Polygon.Polygon):
 
     @classmethod
@@ -156,9 +157,10 @@ class MyPolygon(Polygon.Polygon):
         """
         Build a Polygon object using a wcs.calc_footprint output as input.
         """
-        polygon =  cls(numpy.concatenate((footprint, numpy.array([footprint[0]])), axis=0))
+        polygon = cls(numpy.concatenate((footprint, numpy.array([footprint[0]])), axis=0))
         polygon.footprint = footprint
         return polygon
+
 
 class Observation(object):
 
@@ -181,6 +183,7 @@ class Observation(object):
 
     def __str__(self):
         return "{}".format(self.dataset_name)
+
 
 class Artifact(object):
 
@@ -284,6 +287,7 @@ class Artifact(object):
         """Delete a file from VOSpace"""
         delete(self.uri)
 
+
 class FitsArtifact(Artifact):
 
     @property
@@ -300,7 +304,6 @@ class FitsArtifact(Artifact):
         self._hdulist = hdulist
 
 
-
 class FitsTable(FitsArtifact):
 
     def __init__(self, *args, **kwargs):
@@ -309,6 +312,11 @@ class FitsTable(FitsArtifact):
 
     @property
     def table(self):
+        """
+
+        :return: Table object built from this FitsArtifact
+        :rtype: Table
+        """
         if self._table is None:
             if not os.access(self.filename, os.R_OK):
                 self.get()
@@ -333,6 +341,8 @@ class Image(FitsArtifact):
 
     def __init__(self, *args, **kwargs):
         super(Image, self).__init__(*args, **kwargs)
+        self._ccd = None
+        self.ccd = kwargs.get('ccd', None)
         self._header = None
         self._wcs = None
         self._flat_field_name = None
@@ -345,7 +355,7 @@ class Image(FitsArtifact):
 
     @ccd.setter
     def ccd(self, ccd):
-        self._wcs = self._header = self._footer = None
+        self._wcs = self._header = None
         self._ccd = ccd
 
     @property
@@ -359,6 +369,10 @@ class Image(FitsArtifact):
 
     @property
     def header(self):
+        """
+        :return:         The Header of the FITS Extension hold this image.
+        :rtype: fits.Header
+        """
         if self.ccd is None:
             ext = 0
         else:
@@ -380,12 +394,9 @@ class Image(FitsArtifact):
 
     @property
     def footprint(self):
-        #if self._footprint is not None:
-        #    return self._footprint
         self._footprint = self.wcs.calc_footprint()
         self._footprint = numpy.concatenate((self._footprint, numpy.array([self._footprint[0]])), axis=0)
         return self._footprint
-
 
     @property
     def polygon(self):
@@ -437,7 +448,7 @@ class Image(FitsArtifact):
             for header in self.header:
                 self._flat_field_name = (header.get("FLAT", None))
         if self._flat_field_name is None:
-             self._flat_field_name = "weight.fits"
+            self._flat_field_name = "weight.fits"
         self._flat_field_name = self._flat_field_name.rstrip(".fits")
         return self._flat_field_name
 
@@ -447,7 +458,6 @@ class Image(FitsArtifact):
         filename = os.path.basename(uri)
         copy(uri, filename)
         return open(filename).read()
-
 
     def overlaps(self, minimum_time=2.0 / 24.0, runids=RUNIDS):
         """Do a QUERY on the TAP service for all observations that are part of OSSOS (*P05/*P016)
@@ -461,13 +471,13 @@ class Image(FitsArtifact):
         @return Table
         """
 
-        query = ( " SELECT Observation.observationID as collectionID "
-                  " FROM caom2.Observation AS Observation "
-                  " JOIN caom2.Plane AS Plane "
-                  " ON Observation.obsID = Plane.obsID "
-                  " WHERE Observation.collection = 'CFHT'  "
-                  " AND Plane.calibrationLevel = 1 "
-                  " AND Plane.energy_bandpassName LIKE 'r.%'  ")
+        query = (" SELECT Observation.observationID as collectionID "
+                 " FROM caom2.Observation AS Observation "
+                 " JOIN caom2.Plane AS Plane "
+                 " ON Observation.obsID = Plane.obsID "
+                 " WHERE Observation.collection = 'CFHT'  "
+                 " AND Plane.calibrationLevel = 1 "
+                 " AND Plane.energy_bandpassName LIKE 'r.%'  ")
 
         # Restrict the overlap search to particular runids
         if len(runids) > 0:
@@ -477,7 +487,6 @@ class Image(FitsArtifact):
                 query += sep+" Observation.proposal_id LIKE '{}' ".format(runid)
                 sep = " OR "
             query += " ) "
-
 
         polygon_str = "POLYGON('ICRS GEOCENTER', " + ", ".join([str(x) for x in self.footprint.ravel()]) + ")"
 
@@ -782,6 +791,11 @@ class Header(Image):
 
     @property
     def headers(self):
+        """
+        The a list of the headers assocaited with the MEF.
+        :return: List of image headers
+        :rtype: list
+        """
         if self._headers is not None:
             return self._headers
         if not os.access(self.filename, os.R_OK):
@@ -790,17 +804,22 @@ class Header(Image):
         header_str_list = re.split('END      \n', open(self.filename, 'r').read())
 
         # make the first entry in the list a Null
-        self._headers = []
+        _headers = []
         for header_str in header_str_list[:-1]:
             header = fits.Header.fromstring(header_str, sep='\n')
-            if len(self._headers) == 0 and not header.get('SIMPLE', False):
-                self._headers.append({})
-                self._headers[0]["SOURCE"] = self.uri
-            self._headers.append(header)
+            if len(_headers) == 0 and not header.get('SIMPLE', False):
+                _headers.append({"SOURCE": self.uri})
+            _headers.append(header)
+        self._headers = _headers
         return self._headers
 
     @property
     def header(self):
+        """
+        The FITS header.
+        :return: image header
+        :rtype: Header
+        """
         return self.headers[self.ccd+1]
                             
 
@@ -846,7 +865,7 @@ def listdir(directory, force=False):
 
 def list_dbimages(dbimages=None):
     if dbimages is None:
-        dbimages=DBIMAGES
+        dbimages = DBIMAGES
     return listdir(dbimages)
 
 
@@ -969,7 +988,7 @@ def archive_url(dataset_name, version, ext=IMAGE_EXT, archive=ARCHIVE, **kwargs)
 
 def pitcairn_uri(dataset_name, ext=None):
     if ext is None:
-        ext=IMAGE_EXT
+        ext = IMAGE_EXT
     return "{}/{}{}{}".format(PITCAIRN, dataset_name, PROCESSED_VERSION, ext)
 
 
@@ -999,7 +1018,7 @@ def copy(source, destination):
     while True:
         try:
             return vospace.client.copy(source, destination)
-        except Exception as ex:
+        except OSError as ex:
             if ex.errno == errno.ENOENT:
                 raise ex
             count += 1
@@ -1007,19 +1026,27 @@ def copy(source, destination):
             if count > MAX_RETRY:
                 raise ex
 
+
 def tap_query(query):
+    """
+    Send query to a TAP service and return an astropy table. (could use astroquery instead)
+    :param query: SQL to send to the TAP service.
+    :type query: str
+    :return: Table of results
+    :rtype: Table
+    """
 
-        data = dict(QUERY=query,
-                    REQUEST="doQuery",
-                    LANG="ADQL",
-                    FORMAT="tsv")
+    data = dict(QUERY=query,
+                REQUEST="doQuery",
+                LANG="ADQL",
+                FORMAT="tsv")
 
-        logging.debug("QUERY: {}".format(data["QUERY"]))
-        result = requests.get(TAP_WEB_SERVICE, params=data, verify=False)
-        logging.debug("Doing TAP Query using url: %s" % (str(result.url)))
+    logging.debug("QUERY: {}".format(data["QUERY"]))
+    result = requests.get(TAP_WEB_SERVICE, params=data, verify=False)
+    logging.debug("Doing TAP Query using url: %s" % (str(result.url)))
 
-        table_reader = ascii.get_reader(Reader=ascii.Basic)
-        table_reader.header.splitter.delimiter = '\t'
-        table_reader.data.splitter.delimiter = '\t'
-        table = table_reader.read(result.text)
-        return table
+    table_reader = ascii.get_reader(Reader=ascii.Basic)
+    table_reader.header.splitter.delimiter = '\t'
+    table_reader.data.splitter.delimiter = '\t'
+    table = table_reader.read(result.text)
+    return table
