@@ -11,7 +11,6 @@ import requests
 from astropy.table import Table
 from astropy.io import fits, ascii
 from astropy.time import Time
-from healpy import pixelfunc
 
 import util
 import vospace
@@ -53,6 +52,7 @@ FLATS_VOSPACE = 'vos:sgwyn/flats'
 ARCHIVE = 'CFHT'
 DEFAULT_FORMAT = 'fits'
 NSIDE = 32
+
 
 class MyRequests(object):
 
