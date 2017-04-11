@@ -11,6 +11,8 @@ import requests
 from astropy.table import Table
 from astropy.io import fits, ascii
 from astropy.time import Time
+from healpy import pixelfunc
+
 import util
 import vospace
 from wcs import WCS
@@ -45,11 +47,12 @@ PROCESSED_VERSION = 'p'
 RAW_VERSION = 'o'
 RUNIDS = ['%P30', '%P31']
 DBIMAGES = 'vos:cfis/solar_system/dbimages'
+CATALOG = 'catalogs'
 PITCAIRN = 'vos:cfis/pitcairn'
 FLATS_VOSPACE = 'vos:sgwyn/flats'
 ARCHIVE = 'CFHT'
 DEFAULT_FORMAT = 'fits'
-
+NSIDE = 32
 
 class MyRequests(object):
 
@@ -552,6 +555,31 @@ class Image(FitsArtifact):
     @property
     def zeropoint(self):
         return float(self.header.get(ZEROPOINT_KEYWORD, 30.0))
+
+
+class HPXCatalog(FitsTable):
+
+    def __init__(self, pixel, version="_cat", ext=".fits", subdir="", nside=None, **kwargs):
+        self.pixel = pixel
+        if nside is None:
+            nside = util.HEALPIX_NSIDE
+        self.nside = nside
+        dbimages = os.path.join(os.path.dirname(DBIMAGES), CATALOG)
+        super(HPXCatalog, self).__init__(Observation(self.dataset_name, dbimages=dbimages),
+                                         version=version, ext=ext, subdir=subdir, **kwargs)
+
+    @property
+    def skycoord(self):
+        return util.healpix_to_skycoord(self.pixel, nside=self.nside)
+
+    @property
+    def dataset_name(self):
+        number_of_pix = 12 * self.nside ** 2
+        field_size = len(str(number_of_pix))
+        dataset_name = ("{" + ":0{:d}".format(field_size) + "}").format(self.pixel)
+        return "HPX_{}_RA_{:4.1f}_DEC_{:+4.1f}".format(dataset_name,
+                                                       self.skycoord.ra.degree,
+                                                       self.skycoord.dec.degree)
 
 
 def set_tags_on_uri(uri, keys, values=None):
