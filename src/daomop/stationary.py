@@ -61,6 +61,7 @@ def run(expnum, ccd, prefix, version, dry_run, force):
             # place the results into VOSpace
             logging.info(message)
         except Exception as e:
+            print type(e)
             message = str(e)
             logging.error(message)
 
@@ -122,20 +123,18 @@ def match(expnum, ccd):
         try:
             match_catalog = storage.FitsTable(storage.Observation(match_set[0]), ccd=match_set[1], ext='.cat.fits')
             match_image = storage.Image(storage.Observation(match_set[0]), ccd=match_set[1])
-        except Exception as ex:
-            logging.error(ex)
-            logging.error(type(ex))
-            continue
+            # reshape the position vectors from the catalogues for use in match_lists
+            p2 = numpy.transpose((match_catalog.table['X_WORLD'],
+                                  match_catalog.table['Y_WORLD']))
+            idx1, idx2 = util.match_lists(p1, p2, tolerance=1.0/3600.0)
+            matches[idx2.data[~idx2.mask]] += 1
+            overlaps += [match_image.polygon.isInside(row['X_WORLD'], row['Y_WORLD']) for row in catalog.table]
         except OSError as ioe:
-            logging.debug(str(ioe))
-            continue
+            if ioe.errno == errno.ENOENT:
+               logging.info(str(ioe))
+               continue
+            raise ioe
             
-        overlaps += [match_image.polygon.isInside(row['X_WORLD'], row['Y_WORLD']) for row in catalog.table]
-        # reshape the position vectors from the catalogues for use in match_lists
-        p2 = numpy.transpose((match_catalog.table['X_WORLD'],
-                              match_catalog.table['Y_WORLD']))
-        idx1, idx2 = util.match_lists(p1, p2, tolerance=1.0/3600.0)
-        matches[idx2.data[~idx2.mask]] += 1
 
     catalog.table['MATCHES'] = matches
     catalog.table['OVERLAPS'] = overlaps
