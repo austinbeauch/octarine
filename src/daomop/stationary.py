@@ -10,31 +10,20 @@ import numpy
 import argparse
 import logging
 
-task="stationary"
+task = "stationary"
 dependency = None
-
-def add_column(hdu, column_name, column_format, data):
-    """
-
-    @param hdu:  The FITS Binary table to add the column to
-    @param column_name: The name of the Column to add
-    @param column_format: The data format for the column
-    @param data: The data for the column
-    @return: fits.BinTableHDU
-    """
-    orig_cols = hdu.data.columns
-    new_cols = fits.ColDefs([fits.Column(name=column_name, format=column_format, array=data),])
-    new_hdu = fits.BinTableHDU.from_columns(orig_cols + new_cols, name=hdu.name)
-    return new_hdu
 
 
 def run(expnum, ccd, prefix, version, dry_run, force):
     """
     Retrieve the catalog from VOSspace, find the matching dataset_name/ccd combos and match against those.
 
-    @param expnum: exposure number to retrieve for match
-    @param ccd: chip to retrieve for matching
-    @return:
+    :param ccd: chip to retrieve for matching
+    :param expnum: exposure number to retrieve for match
+    :param force:
+    :param dry_run:
+    :param version:
+    :param prefix:
     """
     message = storage.SUCCESS
 
@@ -67,45 +56,30 @@ def run(expnum, ccd, prefix, version, dry_run, force):
 
         storage.set_status(task, prefix, expnum, version, ccd=ccd, status=message)
 
-NSIDE = 32
-def split_to_hpx(catalog, nside=NSIDE):
 
-    number_of_pix = 12 * nside**2
-    field_size = len(str(number_of_pix))
-    table = catalog.table
+def split_to_hpx(catalog):
+
     dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
     image = storage.Image(catalog.observation, ccd=catalog.ccd, version=catalog.version)
     catalog.table['dataset_name'] = len(catalog.table)*[dataset_name]
     catalog.table['mid_mjdate'] = image.header['MJDATE'] + image.header['EXPTIME']/24./3600.0
 
-    ra_dec = SkyCoord(catalog.table['X_WORLD'], 
-                      catalog.table['Y_WORLD'],
-                      unit=('degree', 'degree'))
-    healpix = util.skycoord_to_healpix(ra_dec, nside=nside)
-    for pix in numpy.unique(healpix):
-        hpx_dataset_name = ("{"+":0{:d}".format(field_size)+"}").format(pix)
-        skycoord = util.healpix_to_skycoord(pix, nside=nside)
-        hpx_dataset_name = "HPX_{}_RA_{:4.1f}_DEC_{:+4.1f}".format(hpx_dataset_name, skycoord.ra.degree, skycoord.dec.degree)
-        observation = storage.Observation(hpx_dataset_name, dbimages="vos:cfis/solar_system/catalogs/")
-        healpix_catalog = storage.FitsTable(observation, 
-                                            ccd=None, 
-                                            subdir="", 
-                                            version='_cat', 
-                                            prefix=None, 
-                                            ext='.fits')
+    for pix in numpy.unique(catalog.table['HEALPIX']):
+        healpix_catalog = storage.HPXCatalog(pixel=pix)
         try:
             healpix_catalog.get()
-            healpix_catalog.table = healpix_catalog.table[healpix_catalog.table['dataset_name']!=dataset_name]
-            healpix_catalog.table = vstack([healpix_catalog.table, catalog.table[healpix==pix]])
-        except Exception as ex:
+            healpix_catalog.table = healpix_catalog.table[healpix_catalog.table['dataset_name'] != dataset_name]
+            healpix_catalog.table = vstack([healpix_catalog.table, catalog.table[catalog.table['HEALPIX'] == pix]])
+        except OSError as ex:
             if ex.errno == errno.ENOENT:
-                healpix_catalog.hdulist=fits.HDUList()
+                healpix_catalog.hdulist = fits.HDUList()
                 healpix_catalog.hdulist.append(catalog.hdulist[0])
-                healpix_catalog.table = catalog.table[healpix==pix]
+                healpix_catalog.table = catalog.table[catalog.table['HEALPIX'] == pix]
             else:
-                raise(ex)
+                raise ex
         healpix_catalog.write()
         healpix_catalog.put()
+
 
 def match(expnum, ccd):
 
@@ -113,11 +87,37 @@ def match(expnum, ccd):
     image = storage.Image(observation, ccd=ccd)
     match_list = image.overlaps()
     catalog = storage.FitsTable(observation, ccd=ccd, ext='.cat.fits')
+    # First match against the HPX catalogs (if they exist)
+    ra_dec = SkyCoord(catalog.table['X_WORLD'],
+                      catalog.table['Y_WORLD'],
+                      unit=('degree', 'degree'))
+    catalog.table['HEALPIX'] = util.skycoord_to_healpix(ra_dec)
     # reshape the position vectors from the catalogues for use in match_lists
     p1 = numpy.transpose((catalog.table['X_WORLD'],
                           catalog.table['Y_WORLD']))
-    matches = numpy.zeros(len(catalog.table['X_WORLD']))
-    overlaps = numpy.zeros(len(catalog.table['X_WORLD']))
+
+    # Build the HPXID column by matching against the HPX catalogs that might exit.
+    catalog.table['HPXID'] = -1
+    for healpix in numpy.unique(catalog.table['HEALPIX']):
+        hpx_cat = storage.HPXCatalog(pixel=healpix)
+        hpx_cat_len = 0
+        try:
+            hpx_cat.get()
+            p2 = numpy.transpose((hpx_cat.table['X_WORLD'],
+                                  hpx_cat.table['Y_WORLD']))
+            idx1, idx2 = util.match_lists(p1, p2, tolerance=0.5 / 3600.0)
+            catalog.table['HPXID'][idx2.data[~idx2.mask]] = hpx_cat.table['HPXID'][~idx2.mask]
+            hpx_cat_len = len(hpx_cat.table)
+        except OSError as ose:
+            if ose.errno != errno.ENOENT:
+                raise ose
+        # for all non-matched sources in this healpix we increment the counter.
+        cond = numpy.all((catalog.table['HPXID'] < 0,
+                          catalog.table['HEALPIX'] == healpix), axis=0)
+        catalog.table['HPXID'][cond] = [hpx_cat_len + numpy.arange(cond.sum()), ]
+
+    catalog.table['MATCHES'] = 0
+    catalog.table['OVERLAPS'] = 0
     for match_set in match_list:
         logging.info("trying to match against catalog {}p{:02d}.cat.fits".format(match_set[0], match_set[1]))
         try:
@@ -126,18 +126,15 @@ def match(expnum, ccd):
             # reshape the position vectors from the catalogues for use in match_lists
             p2 = numpy.transpose((match_catalog.table['X_WORLD'],
                                   match_catalog.table['Y_WORLD']))
-            idx1, idx2 = util.match_lists(p1, p2, tolerance=1.0/3600.0)
-            matches[idx2.data[~idx2.mask]] += 1
-            overlaps += [match_image.polygon.isInside(row['X_WORLD'], row['Y_WORLD']) for row in catalog.table]
+            idx1, idx2 = util.match_lists(p1, p2, tolerance=0.5/3600.0)
+            catalog.table['MATCHES'][idx2.data[~idx2.mask]] += 1
+            catalog.table['OVERLAPS'] += \
+                [match_image.polygon.isInside(row['X_WORLD'], row['Y_WORLD']) for row in catalog.table]
         except OSError as ioe:
             if ioe.errno == errno.ENOENT:
-               logging.info(str(ioe))
-               continue
+                logging.info(str(ioe))
+                continue
             raise ioe
-            
-
-    catalog.table['MATCHES'] = matches
-    catalog.table['OVERLAPS'] = overlaps
 
     return catalog
 
@@ -183,14 +180,14 @@ def main():
     exit_code = 0
     for expnum in args.dataset_name:
         if args.ccd is None:
-           if int(expnum) < 1785619:
-               # Last exposures with 36 CCD Megaprime
-               ccdlist = range(0,36)
-           else:
-               # First exposrues with 40 CCD Megaprime
-               ccdlist = range(0, 40)
+            if int(expnum) < 1785619:
+                # Last exposures with 36 CCD Megaprime
+                ccdlist = range(0, 36)
+            else:
+                # First exposrues with 40 CCD Megaprime
+                ccdlist = range(0, 40)
         else:
-           ccdlist = [args.ccd]
+            ccdlist = [args.ccd]
         for ccd in ccdlist:
             run(expnum, ccd, prefix, version, args.dry_run, args.force)
     return exit_code
