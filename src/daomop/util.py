@@ -43,17 +43,23 @@ def config_logging(level):
     logger.handlers = []
     logger.addHandler(sh)
 
-def healpix_to_skycoord(pix, nside=HEALPIX_NSIDE):
+
+def healpix_to_skycoord(pix, nside=None):
     """
     given a healpix pix and the nside level of the healpix return the SkyCoord representing the centre of the field
     """
+    if nside is None:
+        nside = HEALPIX_NSIDE
     ra, dec = pixelfunc.pix2ang(nside, pix, lonlat=True)
     return SkyCoord(ra, dec, unit='degree')
 
-def skycoord_to_healpix(skycoord, nside=HEALPIX_NSIDE):
+
+def skycoord_to_healpix(skycoord, nside=None):
     """
     Convert an array of RA DEC values to their HEALPIX values.
     """
+    if nside is None:
+        nside = HEALPIX_NSIDE
     return pixelfunc.ang2pix(nside, skycoord.ra.degree, skycoord.dec.degree, lonlat=True)
 
 def set_logger(args):
