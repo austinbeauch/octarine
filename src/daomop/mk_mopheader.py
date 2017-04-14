@@ -27,8 +27,8 @@ import logging
 import os
 from subprocess import CalledProcessError
 
-from src.daomop import storage
-from src.daomop import util
+import storage
+import util
 
 task = "mk_mopheader"
 dependency = 'update_header'
