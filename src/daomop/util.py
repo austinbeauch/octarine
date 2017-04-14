@@ -8,6 +8,8 @@ import tempfile
 import time
 from datetime import datetime
 from logging import handlers
+import Polygon
+import healpy
 import numpy
 import six
 import vospace
@@ -42,6 +44,13 @@ def config_logging(level):
     sh.formatter = logging.Formatter(fmt=log_format)
     logger.handlers = []
     logger.addHandler(sh)
+
+
+def healpix_to_corners(pix, nside=None):
+    if nside is None:
+        nside = HEALPIX_NSIDE
+    corners = healpy.boundaries(nside, pix)
+    return numpy.transpose(healpy.vec2ang(numpy.transpose(corners), lonlat=True))
 
 
 def healpix_to_skycoord(pix, nside=None):

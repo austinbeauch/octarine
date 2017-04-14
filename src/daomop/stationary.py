@@ -85,7 +85,11 @@ def match(expnum, ccd):
 
     observation = storage.Observation(expnum)
     image = storage.Image(observation, ccd=ccd)
-    match_list = image.overlaps()
+
+    match_list = image.polygon.cone_search(runids=storage.RUNIDS,
+                                           minimum_time=2.0/24.0,
+                                           mjdate=image.header.get('MJDATE', None))
+
     catalog = storage.FitsTable(observation, ccd=ccd, ext='.cat.fits')
     # First match against the HPX catalogs (if they exist)
     ra_dec = SkyCoord(catalog.table['X_WORLD'],
@@ -139,24 +143,19 @@ def match(expnum, ccd):
     return catalog
 
 
+
 def main():
     parser = argparse.ArgumentParser(
         description='Create a matches column in a source catalog to determine if a source is a stationary object.')
 
-    parser.add_argument('--ccd', '-c',
-                        action='store',
-                        type=int,
-                        dest='ccd',
-                        default=None,
-                        help='which ccd to process, default is all')
     parser.add_argument("--dbimages",
                         action="store",
                         default="vos:cfis/solar_system/dbimages",
                         help='vospace dbimages containerNode')
-    parser.add_argument("dataset_name",
+    parser.add_argument("healpix",
                         type=int,
                         nargs='+',
-                        help="dataset_name(s) to process")
+                        help="healpix to process")
     parser.add_argument("--dry-run",
                         action="store_true",
                         help="DRY RUN, don't copy results to VOSpace, implies --force")
@@ -178,19 +177,14 @@ def main():
     version = 'p'
 
     exit_code = 0
-    for expnum in args.dataset_name:
-        if args.ccd is None:
-            if int(expnum) < 1785619:
-                # Last exposures with 36 CCD Megaprime
-                ccdlist = range(0, 36)
-            else:
-                # First exposrues with 40 CCD Megaprime
-                ccdlist = range(0, 40)
-        else:
-            ccdlist = [args.ccd]
-        for ccd in ccdlist:
-            run(expnum, ccd, prefix, version, args.dry_run, args.force)
+    overlaps = storage.MyPolygon.from_healpix(args.healpix).cone_search(runids=storage.RUNIDS)
+    for overlap in overlaps:
+        expnum = overlap[0]
+        ccd = overlap[1]
+        run(expnum, ccd, prefix, version, args.dry_run, args.force)
     return exit_code
+
+
 
 if __name__ == '__main__':
     sys.exit(main())

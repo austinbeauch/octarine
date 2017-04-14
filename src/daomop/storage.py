@@ -155,14 +155,70 @@ class Task(object):
 
 class MyPolygon(Polygon.Polygon):
 
+    def __init__(self, *args, **kwargs):
+        if 'footprint' in kwargs:
+            self.footprint = kwargs['footprint']
+            del(kwargs['footprint'])
+
+        super(MyPolygon, self).__init__(*args, **kwargs)
+
+
     @classmethod
     def from_footprint(cls, footprint):
         """
         Build a Polygon object using a wcs.calc_footprint output as input.
         """
-        polygon = cls(numpy.concatenate((footprint, numpy.array([footprint[0]])), axis=0))
-        polygon.footprint = footprint
-        return polygon
+        return cls(numpy.concatenate((footprint, numpy.array([footprint[0]])), axis=0), footprint=footprint)
+
+    @classmethod
+    def from_healpix(cls, healpix, nside=None):
+        corners = util.healpix_to_corners(healpix, nside)
+        return cls.from_footprint(corners)
+
+    def cone_search(self, runids=None, mjdate=None, minimum_time=None):
+
+        query = (" SELECT Observation.observationID as collectionID "
+                 " FROM caom2.Observation AS Observation "
+                 " JOIN caom2.Plane AS Plane "
+                 " ON Observation.obsID = Plane.obsID "
+                 " WHERE Observation.collection = 'CFHT'  "
+                 " AND Plane.calibrationLevel = 1 "
+                 " AND Plane.energy_bandpassName LIKE 'r.%'  ")
+
+        # Restrict the overlap search to particular runids
+        if runids is not None and len(runids) > 0:
+            query += " AND ( "
+            sep = ""
+            for runid in runids:
+                query += sep + " Observation.proposal_id LIKE '{}' ".format(runid)
+                sep = " OR "
+            query += " ) "
+
+        polygon_str = "POLYGON('ICRS GEOCENTER', " + ", ".join([str(x) for x in self.footprint.ravel()]) + ")"
+
+        query += " AND INTERSECTS( {}, Plane.position_bounds ) = 1 ".format(polygon_str)
+        if mjdate is not None:
+            query += " AND ( Plane.time_bounds_lower < {} ".format(mjdate - minimum_time)
+            query += " OR  Plane.time_bounds_upper > {} ) ".format(mjdate + minimum_time)
+
+        table = tap_query(query)
+        overlaps = []
+        for collectionID in table['collectionID']:
+            try:
+                headers = Header(Observation(collectionID))
+                for header in headers.headers:
+                    if header.get('EXTVER', None) is None:
+                        continue
+                    headers.ccd = int(header['EXTVER'])
+                    if headers.polygon.overlaps(self):
+                        overlaps.append([collectionID, headers.ccd])
+            except Exception as ex:
+                logging.debug("ERROR processing {}: {}".format(collectionID, ex))
+                continue
+        logging.debug("Found these overlapping CCDs\n" + str(overlaps))
+        return overlaps
+
+
 
 
 class Observation(object):
@@ -351,6 +407,7 @@ class Image(FitsArtifact):
         self._flat_field_name = None
         self._flat_field = None
         self._footprint = None
+        self._polygon = None
     
     @property
     def ccd(self):
@@ -403,7 +460,9 @@ class Image(FitsArtifact):
 
     @property
     def polygon(self):
-        return MyPolygon(self.footprint)
+        if self._polygon is None:
+           self._polygon = MyPolygon.from_footprint(self.footprint)
+        return self._polygon
 
     @property
     def uri(self):
@@ -462,59 +521,6 @@ class Image(FitsArtifact):
         copy(uri, filename)
         return open(filename).read()
 
-    def overlaps(self, minimum_time=2.0 / 24.0, runids=RUNIDS):
-        """Do a QUERY on the TAP service for all observations that are part of OSSOS (*P05/*P016)
-        where taken after mjd and have calibration 'observable'.
-
-        @param runids: Which RUNIDs to look for overlap, set to None to remove restriction.
-        @type runids: list
-        @param minimum_time: minimum time separation (in days) required for a search match
-        @type minimum_time: float
-
-        @return Table
-        """
-
-        query = (" SELECT Observation.observationID as collectionID "
-                 " FROM caom2.Observation AS Observation "
-                 " JOIN caom2.Plane AS Plane "
-                 " ON Observation.obsID = Plane.obsID "
-                 " WHERE Observation.collection = 'CFHT'  "
-                 " AND Plane.calibrationLevel = 1 "
-                 " AND Plane.energy_bandpassName LIKE 'r.%'  ")
-
-        # Restrict the overlap search to particular runids
-        if len(runids) > 0:
-            query += " AND ( "
-            sep = ""
-            for runid in runids:
-                query += sep+" Observation.proposal_id LIKE '{}' ".format(runid)
-                sep = " OR "
-            query += " ) "
-
-        polygon_str = "POLYGON('ICRS GEOCENTER', " + ", ".join([str(x) for x in self.footprint.ravel()]) + ")"
-
-        query += " AND INTERSECTS( {}, Plane.position_bounds ) = 1 ".format(polygon_str)
-        mjdate = self.header.get('MJDATE', None)
-        if mjdate is not None:
-            query += " AND ( Plane.time_bounds_lower < {} ".format(mjdate - minimum_time)
-            query += " OR  Plane.time_bounds_upper > {} ) ".format(mjdate + minimum_time)
-
-        table = tap_query(query)
-        overlaps = []
-        for collectionID in table['collectionID']:
-            try:
-                headers = Header(Observation(collectionID))
-                for header in headers.headers:
-                    if header.get('EXTVER', None) is None:
-                        continue
-                    headers.ccd = int(header['EXTVER'])
-                    if headers.polygon.overlaps(self.polygon):
-                        overlaps.append([collectionID, headers.ccd])
-            except Exception as ex:
-                logging.debug("ERROR processing {}: {}".format(collectionID, ex))
-                continue
-        logging.debug("Found these overlapping CCDs\n" + str(overlaps))
-        return overlaps
 
     def cutout(self, cutout, return_file=False):
         """
@@ -1053,6 +1059,8 @@ def copy(source, destination):
             logging.debug(str(ex))
             if count > MAX_RETRY:
                 raise ex
+
+
 
 
 def tap_query(query):
