@@ -14,7 +14,7 @@ task = "stationary"
 dependency = None
 
 
-def run(expnum, ccd, prefix, version, dry_run, force):
+def run(pixel, expnum, ccd, prefix, version, dry_run, force):
     """
     Retrieve the catalog from VOSspace, find the matching dataset_name/ccd combos and match against those.
 
@@ -41,8 +41,8 @@ def run(expnum, ccd, prefix, version, dry_run, force):
             logging.info("Getting fits image from VOSpace")
 
             logging.info("Running match on %s %d" % (expnum, ccd))
-            catalog = match(expnum, ccd)
-            split_to_hpx(catalog)
+            catalog = match(pixel, expnum, ccd)
+            split_to_hpx(pixel, catalog)
 
             if dry_run:
                 return
@@ -57,14 +57,16 @@ def run(expnum, ccd, prefix, version, dry_run, force):
         storage.set_status(task, prefix, expnum, version, ccd=ccd, status=message)
 
 
-def split_to_hpx(catalog):
+def split_to_hpx(pixel, catalog):
 
     dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
     image = storage.Image(catalog.observation, ccd=catalog.ccd, version=catalog.version)
     catalog.table['dataset_name'] = len(catalog.table)*[dataset_name]
     catalog.table['mid_mjdate'] = image.header['MJDATE'] + image.header['EXPTIME']/24./3600.0
 
-    for pix in numpy.unique(catalog.table['HEALPIX']):
+    pix = pixel
+    if 1 == 1:
+    #for pix in numpy.unique(catalog.table['HEALPIX']):
         healpix_catalog = storage.HPXCatalog(pixel=pix)
         try:
             healpix_catalog.get()
@@ -81,7 +83,7 @@ def split_to_hpx(catalog):
         healpix_catalog.put()
 
 
-def match(expnum, ccd):
+def match(pixel, expnum, ccd):
 
     observation = storage.Observation(expnum)
     image = storage.Image(observation, ccd=ccd)
@@ -96,13 +98,16 @@ def match(expnum, ccd):
                       catalog.table['Y_WORLD'],
                       unit=('degree', 'degree'))
     catalog.table['HEALPIX'] = util.skycoord_to_healpix(ra_dec)
+
     # reshape the position vectors from the catalogues for use in match_lists
     p1 = numpy.transpose((catalog.table['X_WORLD'],
                           catalog.table['Y_WORLD']))
 
     # Build the HPXID column by matching against the HPX catalogs that might exit.
     catalog.table['HPXID'] = -1
-    for healpix in numpy.unique(catalog.table['HEALPIX']):
+    healpix = pixel
+    # for healpix in numpy.unique(catalog.table['HEALPIX']):
+    if 1 == 1:
         hpx_cat = storage.HPXCatalog(pixel=healpix)
         hpx_cat_len = 0
         try:
@@ -143,7 +148,6 @@ def match(expnum, ccd):
     return catalog
 
 
-
 def main():
     parser = argparse.ArgumentParser(
         description='Create a matches column in a source catalog to determine if a source is a stationary object.')
@@ -154,7 +158,7 @@ def main():
                         help='vospace dbimages containerNode')
     parser.add_argument("healpix",
                         type=int,
-                        nargs='+',
+                        nargs=1,
                         help="healpix to process")
     parser.add_argument("--dry-run",
                         action="store_true",
@@ -181,7 +185,7 @@ def main():
     for overlap in overlaps:
         expnum = overlap[0]
         ccd = overlap[1]
-        run(expnum, ccd, prefix, version, args.dry_run, args.force)
+        run(args.healpix, expnum, ccd, prefix, version, args.dry_run, args.force)
     return exit_code
 
 
