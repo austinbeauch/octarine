@@ -210,7 +210,9 @@ class MyPolygon(Polygon.Polygon):
                     if header.get('EXTVER', None) is None:
                         continue
                     headers.ccd = int(header['EXTVER'])
+                    logging.debug("Checking {} {} ".format(collectionID, headers.ccd))
                     if headers.polygon.overlaps(self):
+                        logging.debug("{} {} OVERLAPS ".format(collectionID, headers.ccd))
                         overlaps.append([collectionID, headers.ccd])
             except Exception as ex:
                 logging.debug("ERROR processing {}: {}".format(collectionID, ex))
@@ -415,7 +417,7 @@ class Image(FitsArtifact):
 
     @ccd.setter
     def ccd(self, ccd):
-        self._wcs = self._header = None
+        self._wcs = self._polygon = self._header = None
         self._ccd = ccd
 
     @property
