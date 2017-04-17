@@ -9,6 +9,7 @@ from astropy.table import vstack
 import numpy
 import argparse
 import logging
+import traceback
 
 task = "stationary"
 dependency = None
@@ -31,7 +32,7 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force):
         logging.info("{} completed successfully for {} {} {} {}".format(task, prefix, expnum, version, ccd))
         return
 
-    with storage.LoggingManager(task, prefix, expnum, ccd, version, dry_run):
+    with storage.LoggingManager(task, str(expnum), expnum, ccd, version, dry_run):
         try:
             if dependency is not None and not storage.get_status(dependency, prefix, 
                                                                  expnum, "p", ccd=ccd):
@@ -50,7 +51,8 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force):
             # place the results into VOSpace
             logging.info(message)
         except Exception as e:
-            print type(e)
+            logging.debug(traceback.format_exc())
+            logging.debug(type(e))
             message = str(e)
             logging.error(message)
 
@@ -87,6 +89,7 @@ def match(pixel, expnum, ccd):
 
     observation = storage.Observation(expnum)
     image = storage.Image(observation, ccd=ccd)
+
 
     match_list = image.polygon.cone_search(runids=storage.RUNIDS,
                                            minimum_time=2.0/24.0,
@@ -158,7 +161,6 @@ def main():
                         help='vospace dbimages containerNode')
     parser.add_argument("healpix",
                         type=int,
-                        nargs=1,
                         help="healpix to process")
     parser.add_argument("--dry-run",
                         action="store_true",
