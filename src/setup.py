@@ -25,7 +25,8 @@ if sys.version_info[0] > 2:
 #           continue
 #        scripts.append(os.path.join(script_dir, script))
 
-console_scripts = [ 'populate = daomop.populate:main', 'stationary = daomop.stationary:main', 'build_cat = daomop.build_cat:main']
+console_scripts = [ 'populate = daomop.populate:main', 'stationary = daomop.stationary:main', 'build_cat = daomop.build_cat:main', 
+                     'hpx_map = daomop.hpx_map:main']
 
 setup(name='daomop',
       version=version,
