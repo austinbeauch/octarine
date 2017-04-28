@@ -89,11 +89,7 @@ def match(pixel, expnum, ccd):
 
     observation = storage.Observation(expnum)
     image = storage.Image(observation, ccd=ccd)
-
-
-    match_list = image.polygon.cone_search(runids=storage.RUNIDS,
-                                           minimum_time=2.0/24.0,
-                                           mjdate=image.header.get('MJDATE', None))
+    datasec = storage.datasec_to_list(image.header['DATASEC'])
 
     catalog = storage.FitsTable(observation, ccd=ccd, ext='.cat.fits')
     # First match against the HPX catalogs (if they exist)
@@ -102,6 +98,25 @@ def match(pixel, expnum, ccd):
                       unit=('degree', 'degree'))
     catalog.table['HEALPIX'] = util.skycoord_to_healpix(ra_dec)
 
+    npts = numpy.sum([catalog.table['MAGERR_AUTO'] < 0.002])
+    if npts < 10:
+        flux_radius_lim = 1.8
+    else:
+        flux_radius_lim = numpy.median(catalog.table['FLUX_RADIUS'][catalog.table['MAGERR_AUTO'] < 0.002])
+
+    trim_condition = numpy.all((catalog.table['X_IMAGE'] > datasec[0],
+                                catalog.table['X_IMAGE'] < datasec[1],
+                                catalog.table['Y_IMAGE'] > datasec[2],
+                                catalog.table['Y_IMAGE'] < datasec[3],
+                                catalog.table['MAG_PSF'] < 99,
+                                catalog.table['FLUX_RADIUS'] > flux_radius_lim), axis=0)
+
+    catalog.table = catalog.table[trim_condition]
+    match_list = image.polygon.cone_search(runids=storage.RUNIDS,
+                                           minimum_time=2.0/24.0,
+                                           mjdate=image.header.get('MJDATE', None))
+
+    # First match against the HPX catalogs (if they exist)
     # reshape the position vectors from the catalogues for use in match_lists
     p1 = numpy.transpose((catalog.table['X_WORLD'],
                           catalog.table['Y_WORLD']))
@@ -135,6 +150,23 @@ def match(pixel, expnum, ccd):
         try:
             match_catalog = storage.FitsTable(storage.Observation(match_set[0]), ccd=match_set[1], ext='.cat.fits')
             match_image = storage.Image(storage.Observation(match_set[0]), ccd=match_set[1])
+            datasec = storage.datasec_to_list(match_image.header['DATASEC'])
+
+            npts = numpy.sum([match_catalog.table['MAGERR_AUTO'] < 0.002])
+            if npts < 10:
+                flux_radius_lim = 1.8
+            else:
+                flux_radius_lim = numpy.median(match_catalog.table['FLUX_RADIUS'][match_catalog.table['MAGERR_AUTO'] < 0.002])
+                
+            trim_condition = numpy.all((match_catalog.table['X_IMAGE'] > datasec[0],
+                                        match_catalog.table['X_IMAGE'] < datasec[1],
+                                        match_catalog.table['Y_IMAGE'] > datasec[2],
+                                        match_catalog.table['Y_IMAGE'] < datasec[3],
+                                        match_catalog.table['MAG_PSF'] < 99,
+                                        match_catalog.table['FLUX_RADIUS'] > flux_radius_lim), axis=0)
+
+            match_catalog.table = match_catalog.table[trim_condition]
+
             # reshape the position vectors from the catalogues for use in match_lists
             p2 = numpy.transpose((match_catalog.table['X_WORLD'],
                                   match_catalog.table['Y_WORLD']))

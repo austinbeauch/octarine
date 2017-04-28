@@ -8,6 +8,8 @@ import tempfile
 import Polygon
 import numpy
 import requests
+from astropy.coordinates import SkyCoord
+from astropy import units
 from astropy.table import Table
 from astropy.io import fits, ascii
 from astropy.time import Time
@@ -456,7 +458,12 @@ class Image(FitsArtifact):
 
     @property
     def footprint(self):
-        self._footprint = self.wcs.calc_footprint()
+        datasec = util.get_pixel_bounds_from_datasec_keyword(self.header['DATASEC'])
+        corners = numpy.array([[datasec[0][0], datasec[1][0]],
+                            [datasec[0][0], datasec[1][1]],
+                            [datasec[0][1], datasec[1][1]],
+                            [datasec[0][1], datasec[1][0]]], dtype = numpy.float64)
+        self._footprint = self.wcs.wcs_pix2world(corners, 1)
         self._footprint = numpy.concatenate((self._footprint, numpy.array([self._footprint[0]])), axis=0)
         return self._footprint
 
@@ -1063,6 +1070,35 @@ def copy(source, destination):
                 raise ex
 
 
+def list_exposures(proposal_title='cfis'):
+    """
+    List all exposures that are part of the project
+    :return:
+    """
+
+    query = (" SELECT Observation.sequenceNumber AS expnum, "
+             " COORD1(CENTROID(Plane.position_bounds)) AS RA, "
+             " COORD2(CENTROID(Plane.position_bounds)) AS DE "
+             " FROM caom2.Observation AS Observation "
+             " JOIN caom2.Plane AS Plane "
+             " ON Observation.obsID = Plane.obsID "
+             " WHERE Observation.collection = 'CFHT'  "
+             " AND Plane.calibrationLevel = 1 "
+             " AND lower(Observation.proposal_title) LIKE '%"+proposal_title+"%' "
+             " AND Plane.energy_bandpassName LIKE 'r.%'  ")
+
+    return tap_query(query)
+
+
+def list_healpix():
+    exposure_table = list_exposures()
+    skycoords = SkyCoord(exposure_table['RA']*units.degree,
+                         exposure_table['DE']*units.degree)
+    healpix = []
+    for coord in skycoords:
+        healpix.append(util.skycoord_to_healpix(coord))
+
+    return numpy.unique(healpix)
 
 
 def tap_query(query):
@@ -1080,7 +1116,12 @@ def tap_query(query):
                 FORMAT="tsv")
 
     logging.debug("QUERY: {}".format(data["QUERY"]))
-    result = requests.get(TAP_WEB_SERVICE, params=data, verify=False)
+    try:
+        result = requests.get(TAP_WEB_SERVICE, params=data, verify=False)
+        result.raise_for_status()
+    except Exception as ex:
+        logging.error(str(ex))
+
     logging.debug("Doing TAP Query using url: %s" % (str(result.url)))
 
     table_reader = ascii.get_reader(Reader=ascii.Basic)
