@@ -32,15 +32,15 @@ class Wrapper(Client):
 
 client = Client()
 
-try:
-    username, account, password = netrc.netrc().authenticators(VOSPACE_SERVER)
-except:
-    username = password = None
-
-if username is None or password is None:
-    username = raw_input('CANFAR Username: ')
-    password = getpass('CANFAR Password: ')
-
-authentication = HTTPBasicAuth(username, password)
+#try:
+#    username, account, password = netrc.netrc().authenticators(VOSPACE_SERVER)
+#except:
+#    username = password = None
+#
+#if username is None or password is None:
+#    username = raw_input('CANFAR Username: ')
+#    password = getpass('CANFAR Password: ')
+#
+#authentication = HTTPBasicAuth(username, password)
 
 
