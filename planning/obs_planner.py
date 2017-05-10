@@ -22,11 +22,11 @@ except:
 from astropy import units
 
 
-from src.daomop import (cadc, mpc, orbfit, parameters, storage, wcs)
-from src.planning import parsers, cadc, parameters
-from src.planning.ephem_target import EphemTarget
-from src.daomop.coord import Coord
-from src.planning.cameras import Camera
+from daomop import (cadc, mpc, orbfit, parameters, storage, wcs)
+from .planning import parsers, cadc, parameters
+from .planning.ephem_target import EphemTarget
+from daomop.coord import Coord
+from .planning.cameras import Camera
 
 
 color_key = {"yellow": "Fill colour is yellow == tracking termination",

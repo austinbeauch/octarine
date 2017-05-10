@@ -15,8 +15,8 @@ import pandas
 from astropy.table import Table
 from uncertainties import ufloat
 
-from src.daomop import (orbfit, parameters, storage)
-from src.planning import deluxe_table_formatter, extreme_tno_table_formatter, parameters
+from daomop import *
+from .planning import deluxe_table_formatter, extreme_tno_table_formatter, parameters
 
 __author__ = 'Michele Bannister   git:@mtbannister'
 

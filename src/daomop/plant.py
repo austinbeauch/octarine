@@ -6,7 +6,7 @@ from astropy.table import Table
 from numpy import random
 from scipy import interpolate
 
-import src.daomop.storage
+import daomop.storage
 
 
 class MatchFile(object):
@@ -21,7 +21,7 @@ class MatchFile(object):
 
     @property
     def filename(self):
-        return os.path.basename(src.daomop.storage.get_cands_uri(self.field,
+        return os.path.basename(daomop.storage.get_cands_uri(self.field,
                                                                  ccd=self.ccd,
                                                                  version=self.version,
                                                                  prefix=self.prefix,

@@ -12,8 +12,8 @@ from astropy import units
 from astropy.coordinates import SkyCoord
 from astropy.time import TimeDelta, Time
 
-from src.planning.cameras import Camera
-from src.planning.ephem_target import EphemTarget
+from .planning.cameras import Camera
+from .planning.ephem_target import EphemTarget
 
 
 def create_ephemeris_file(name, camera, kbos, orbits, pointing_date, qrunid):
