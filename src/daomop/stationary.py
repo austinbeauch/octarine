@@ -62,7 +62,7 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force):
 def split_to_hpx(pixel, catalog):
 
     dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
-    image = storage.Image(catalog.observation, ccd=catalog.ccd, version=catalog.version)
+    image = storage.FitsImage(catalog.observation, ccd=catalog.ccd, version=catalog.version)
     catalog.table['dataset_name'] = len(catalog.table)*[dataset_name]
     catalog.table['mid_mjdate'] = image.header['MJDATE'] + image.header['EXPTIME']/24./3600.0
 
@@ -88,7 +88,7 @@ def split_to_hpx(pixel, catalog):
 def match(pixel, expnum, ccd):
 
     observation = storage.Observation(expnum)
-    image = storage.Image(observation, ccd=ccd)
+    image = storage.FitsImage(observation, ccd=ccd)
     datasec = storage.datasec_to_list(image.header['DATASEC'])
 
     catalog = storage.FitsTable(observation, ccd=ccd, ext='.cat.fits')
@@ -149,7 +149,7 @@ def match(pixel, expnum, ccd):
         logging.info("trying to match against catalog {}p{:02d}.cat.fits".format(match_set[0], match_set[1]))
         try:
             match_catalog = storage.FitsTable(storage.Observation(match_set[0]), ccd=match_set[1], ext='.cat.fits')
-            match_image = storage.Image(storage.Observation(match_set[0]), ccd=match_set[1])
+            match_image = storage.FitsImage(storage.Observation(match_set[0]), ccd=match_set[1])
             datasec = storage.datasec_to_list(match_image.header['DATASEC'])
 
             npts = numpy.sum([match_catalog.table['MAGERR_AUTO'] < 0.002])

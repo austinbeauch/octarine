@@ -30,7 +30,7 @@ def run(expnum, ccd, version, prefix, dry_run, force):
                 raise IOError("{} not yet run for {}".format(dependency, expnum))
 
             observation = storage.Observation(expnum)
-            image = storage.Image(observation, ccd=ccd)
+            image = storage.FitsImage(observation, ccd=ccd)
             image.get()
             image.flat_field.get()
 

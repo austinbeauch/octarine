@@ -223,8 +223,6 @@ class MyPolygon(Polygon.Polygon):
         return overlaps
 
 
-
-
 class Observation(object):
 
     def __init__(self, dataset_name, dbimages=None):
@@ -400,10 +398,11 @@ class FitsTable(FitsArtifact):
         self.hdulist.writeto(self.filename, clobber=True)
 
 
-class Image(FitsArtifact):
+# TODO: create new function in parallel with mp_ephem package
+class FitsImage(FitsArtifact):
 
     def __init__(self, *args, **kwargs):
-        super(Image, self).__init__(*args, **kwargs)
+        super(FitsImage, self).__init__(*args, **kwargs)
         self._ccd = None
         self.ccd = kwargs.get('ccd', None)
         self._header = None
@@ -498,14 +497,14 @@ class Image(FitsArtifact):
     def flat_field(self):
         """
 
-        :rtype: Image
+        :rtype: FitsImage
         """
         if self._flat_field is None:
-            self._flat_field = Image(Observation(self.flat_field_name, dbimages=FLATS_VOSPACE),
-                                     subdir="",
-                                     ext=".fits",
-                                     version="",
-                                     ccd=self.ccd)
+            self._flat_field = FitsImage(Observation(self.flat_field_name, dbimages=FLATS_VOSPACE),
+                                         subdir="",
+                                         ext=".fits",
+                                         version="",
+                                         ccd=self.ccd)
         return self._flat_field
 
     @property
@@ -824,7 +823,7 @@ def reset_datasec(cutout, datasec, naxis1, naxis2):
     return "[{}:{},{}:{}]".format(datasec[0], datasec[1], datasec[2], datasec[3])
 
 
-class Header(Image):
+class Header(FitsImage):
 
     def __init__(self, *args, **kwargs):
         if kwargs.get('ext', None) is None:

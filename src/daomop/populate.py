@@ -6,7 +6,7 @@ import util
 import storage
 from storage import archive_url
 from storage import Observation
-from storage import Image, Header
+from storage import FitsImage, Header
 from storage import make_path
 from storage import make_link
 from storage import pitcairn_uri
@@ -24,7 +24,7 @@ def run(dataset_name):
 
     version = 'o'
     ext = '.fits.fz'
-    artifact = Image(observation, version=version, ext=ext)
+    artifact = FitsImage(observation, version=version, ext=ext)
     source = archive_url(dataset_name, version)
     logging.debug("Making link between {} and {}".format(source, artifact.uri))
     make_path(artifact.uri)
@@ -38,7 +38,7 @@ def run(dataset_name):
     logging.debug("Making link between PROC'd image and dbimages")
     version = 'p'
     ext = '.fits.fz'
-    artifact = Image(observation, version=version, ext=ext)
+    artifact = FitsImage(observation, version=version, ext=ext)
     # Source is either PITCAIRN processing or CFHT archive URL
     source = pitcairn_uri(dataset_name)
     if not isfile(source):
