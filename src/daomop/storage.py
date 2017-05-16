@@ -13,6 +13,7 @@ from astropy import units
 from astropy.table import Table
 from astropy.io import fits, ascii
 from astropy.time import Time
+from cadcutils.exceptions import BadRequestException
 
 import util
 import vospace
@@ -539,7 +540,13 @@ class Image(FitsArtifact):
         :return:
         """
         fpt = tempfile.NamedTemporaryFile(suffix='.fits')
-        copy(self.uri + cutout, fpt.name)
+        try:
+            copy(self.uri + cutout, fpt.name)
+        except BadRequestException as bre:
+            if "No matching data" in str(bre):
+                logging.error(str(bre))
+                return []
+
         fpt.seek(0)
         hdu_list = fits.open(fpt, scale_back=False)
         hdu_list.verify('silentfix+ignore')

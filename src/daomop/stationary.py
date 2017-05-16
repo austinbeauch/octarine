@@ -65,6 +65,7 @@ def split_to_hpx(pixel, catalog):
     image = storage.Image(catalog.observation, ccd=catalog.ccd, version=catalog.version)
     catalog.table['dataset_name'] = len(catalog.table)*[dataset_name]
     catalog.table['mid_mjdate'] = image.header['MJDATE'] + image.header['EXPTIME']/24./3600.0
+    catalog.table['mid_mjdate'] = image.header['EXPTIME']
 
     pix = pixel
     if 1 == 1:
