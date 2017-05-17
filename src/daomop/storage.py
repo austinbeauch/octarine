@@ -8,6 +8,7 @@ import tempfile
 import Polygon
 import numpy
 import requests
+import mp_ephem
 from astropy.coordinates import SkyCoord
 from astropy import units
 from astropy.table import Table
@@ -163,7 +164,6 @@ class MyPolygon(Polygon.Polygon):
             del(kwargs['footprint'])
 
         super(MyPolygon, self).__init__(*args, **kwargs)
-
 
     @classmethod
     def from_footprint(cls, footprint):
@@ -398,7 +398,7 @@ class FitsTable(FitsArtifact):
         self.hdulist.writeto(self.filename, clobber=True)
 
 
-# TODO: create new function in parallel with mp_ephem package
+# TODO: be able to instantiate FitsImage object from frame (passed as o[i].comment.frame = 'xxxxxxxpxx')
 class FitsImage(FitsArtifact):
 
     def __init__(self, *args, **kwargs):
@@ -529,7 +529,6 @@ class FitsImage(FitsArtifact):
         copy(uri, filename)
         return open(filename).read()
 
-
     def cutout(self, cutout, return_file=False):
         """
         Get a sub-section of the image as a cutout.
@@ -569,6 +568,32 @@ class FitsImage(FitsArtifact):
     @property
     def zeropoint(self):
         return float(self.header.get(ZEROPOINT_KEYWORD, 30.0))
+
+    @classmethod
+    def from_frame(cls, frame):
+        """
+        Takes frame number from an .ast file line and creates a FitsImage object.
+         
+        :param frame: frame number
+        :return: FitsImage object of the associated dataset_name and ccd
+        """
+        # assuming frame is supposed to be in the form '1111111p11'
+        x = re.match("\d{7}[A-z]\d{2}", frame)
+
+        # if there is no regex match, frame must be in the wrong format
+        if x is None:
+            raise ValueError('Incorrect frame format')
+
+        observation_id = frame[:-3]
+        ccd = int(frame[-2:])
+
+        obs = Observation(observation_id)
+
+        # if the ccd from the frame is not in the Observation object's ccd list, it's incorrect
+        if ccd not in obs.ccd_list:
+            raise ValueError('Incorrect CCD')
+
+        return FitsImage(obs, ccd=ccd)
 
 
 class HPXCatalog(FitsTable):
