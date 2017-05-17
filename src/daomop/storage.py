@@ -8,7 +8,6 @@ import tempfile
 import Polygon
 import numpy
 import requests
-import mp_ephem
 from astropy.coordinates import SkyCoord
 from astropy import units
 from astropy.table import Table
