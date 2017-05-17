@@ -397,7 +397,6 @@ class FitsTable(FitsArtifact):
         self.hdulist.writeto(self.filename, clobber=True)
 
 
-# TODO: be able to instantiate FitsImage object from frame (passed as o[i].comment.frame = 'xxxxxxxpxx')
 class FitsImage(FitsArtifact):
 
     def __init__(self, *args, **kwargs):
