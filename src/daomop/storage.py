@@ -570,7 +570,9 @@ class FitsImage(FitsArtifact):
     @classmethod
     def from_frame(cls, frame):
         """
-        Takes frame number from an .ast file line and creates a FitsImage object.
+        Takes a frame number and creates a FitsImage object.
+        The frame number of an exposure contains its 7-digit dataset name (eg. 2222222),
+         its version (e.g. 'p'), and its ccd (e.g. 24).
          
         :param frame: frame number
         :return: FitsImage object of the associated dataset_name and ccd
@@ -580,7 +582,7 @@ class FitsImage(FitsArtifact):
 
         # if there is no regex match, frame must be in the wrong format
         if x is None:
-            raise ValueError('Incorrect frame format')
+            raise ValueError('Failed to parse dataset_name and CCD # from input frame: {}'.format(frame))
 
         observation_id = frame[:-3]
         ccd = int(frame[-2:])
@@ -589,7 +591,7 @@ class FitsImage(FitsArtifact):
 
         # if the ccd from the frame is not in the Observation object's ccd list, it's incorrect
         if ccd not in obs.ccd_list:
-            raise ValueError('Incorrect CCD')
+            raise ValueError('CCD # {} from frame {} is out of range.'.format(ccd, frame))
 
         return FitsImage(obs, ccd=ccd)
 
