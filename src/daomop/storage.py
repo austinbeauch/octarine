@@ -13,7 +13,7 @@ from astropy import units
 from astropy.table import Table
 from astropy.io import fits, ascii
 from astropy.time import Time
-from cadcutils.exceptions import BadRequestException
+from cadcutils.exceptions import BadRequestException, AlreadyExistsException
 
 import util
 import vospace
@@ -906,7 +906,10 @@ def delete(uri):
 
 def make_link(source, destination):
     logging.debug("Linking {} to {}".format(source, destination))
-    return vospace.client.link(source, destination)
+    try:
+       return vospace.client.link(source, destination)
+    except AlreadyExistsException as aee:
+       return True
 
 
 def listdir(directory, force=False):
