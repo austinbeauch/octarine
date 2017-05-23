@@ -530,7 +530,8 @@ class FitsImage(FitsArtifact):
     def cutout(self, cutout, return_file=False):
         """
         Get a sub-section of the image as a cutout.
-        :param cutout
+        :param cutout: a string such as "(3.4,3.4,3.4)" or "[22]" to specify which potion 
+        of the image to return
         :param return_file
         :return:
         """
@@ -578,7 +579,7 @@ class FitsImage(FitsArtifact):
         :return: FitsImage object of the associated dataset_name and ccd
         """
         # assuming frame is supposed to be in the form '1111111p11'
-        x = re.match("\d{7}[A-z]\d{2}", frame)
+        x = re.match('\d{7}[A-z]\d{2}', frame)
 
         # if there is no regex match, frame must be in the wrong format
         if x is None:
@@ -594,6 +595,54 @@ class FitsImage(FitsArtifact):
             raise ValueError('CCD # {} from frame {} is out of range.'.format(ccd, frame))
 
         return FitsImage(obs, ccd=ccd)
+
+    def get(self, cutout=None):
+        """
+        Get the artifact from VOSpace. 
+        
+        :param cutout: Section of the image to be retrieved from VOSpace. Can either be a CCD or SkyCoord object
+        with right ascension and declination attributes. 
+        """
+
+        # no cutout supplied, use get method from super class Artifact
+        if cutout is None:
+            return super(FitsImage, self).get()
+
+        # If the cutout is an integer it should be a CCD.
+        # Can change to `elif self.ccd is not None:` if that's more correct.
+        # Currently needs the cutout argument to be explicitly inputted as the ccd integer for this to trigger.
+        # self.ccd always is something for FitsImage? Not sure. Perhaps it depends on how the object is instantiated.
+        elif isinstance(cutout, int):
+            ccd = "[{}]".format(self.ccd)
+            return self.cutout(ccd)
+
+        # SkyCoord object has RA and DEC attributes, pass through as degree values
+        elif isinstance(cutout, SkyCoord):
+            return self.ra_dec_cutout(cutout.ra.deg, cutout.dec.deg)
+
+        # removing "[ccd]" from the uri
+        # uri = re.sub('\[\d{1,2}\]', '', self.uri)  # Not sure if this is needed
+
+        else:
+            raise TypeError('Cutout: {} type is incorrect. Expected: int or SkyCoord. Got: {}'.format(cutout,
+                                                                                                      type(cutout)))
+
+    def ra_dec_cutout(self, ra, dec):
+        """
+        Takes the right ascension and declination as floating point values and 
+         returns that portion of the image. 
+        Cutout radius set to 1 arcminute. 
+        :param ra: right ascension in degrees
+        :param dec: declination in degrees
+        :return: 
+        """
+
+        if not isinstance(ra, float) or not isinstance(dec, float):
+            raise TypeError('RA: {} or DEC: {} not given as floating point vales.'.format(ra, dec))
+
+        # make the 1/60th of a degree parameter a global variable (CUTOUT_RADIUS?) if it's correct
+        ra_dec = "({}, {}, {})".format(str(ra), str(dec), 1.0/60.0)
+        return self.cutout(ra_dec)
 
 
 class HPXCatalog(FitsTable):
