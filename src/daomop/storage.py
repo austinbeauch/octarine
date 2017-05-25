@@ -54,6 +54,7 @@ FLATS_VOSPACE = 'vos:sgwyn/flats'
 ARCHIVE = 'CFHT'
 DEFAULT_FORMAT = 'fits'
 NSIDE = 32
+CUTOUT_RADIUS = 1.0/60.0
 
 
 class MyRequests(object):
@@ -484,12 +485,11 @@ class FitsImage(FitsArtifact):
         """
         uri = "{}/{}".format(self.observation.dbimages, self.subdir)
 
-        if self.ccd is None:
-            return "{}/{}{}{}{}".format(uri, self.prefix, self.observation, self.version, self.ext)
+        return "{}/{}{}{}{}".format(uri, self.prefix, self.observation, self.version, self.ext)
 
-        return "{}/{}{}{}{}[{}]".format(uri,
-                                        self.prefix, self.observation, self.version, self.ext,
-                                        self.ccd+1)
+        # return "{}/{}{}{}{}[{}]".format(uri,
+        #                                 self.prefix, self.observation, self.version, self.ext,
+        #                                 self.ccd+1)
 
     @property
     def flat_field(self):
@@ -529,7 +529,7 @@ class FitsImage(FitsArtifact):
 
     def cutout(self, cutout, return_file=False):
         """
-        Get a sub-section of the image as a cutout.
+        Given a string like '[##]' or '(__,__,__)' retrieve that portion of the image from VOSpace.
         :param cutout: a string such as "(3.4,3.4,3.4)" or "[22]" to specify which potion 
         of the image to return
         :param return_file
@@ -540,10 +540,16 @@ class FitsImage(FitsArtifact):
         fpt.seek(0)
         hdu_list = fits.open(fpt, scale_back=False)
         hdu_list.verify('silentfix+ignore')
-        hdu_list[0].header['DATASEC'] = reset_datasec(cutout,
-                                                      hdu_list[0].header['DATASEC'],
-                                                      hdu_list[0].header['NAXIS1'],
-                                                      hdu_list[0].header['NAXIS2'])
+
+        # cutout passed here is in ra/dec, needs to be in x,y
+        # change the hdu_list indices to 1 instead of 0?
+        # print "cutout in cutout(): ", cutout
+        #
+        # hdu_list[1].header['DATASEC'] = reset_datasec(cutout,
+        #                                               hdu_list[1].header['DATASEC'],
+        #                                               hdu_list[1].header['NAXIS1'],
+        #                                               hdu_list[1].header['NAXIS2'])
+
         if not hdu_list:
             raise OSError(errno.EFAULT, "Failed to retrieve cutout of image", self.uri)
 
@@ -596,53 +602,33 @@ class FitsImage(FitsArtifact):
 
         return FitsImage(obs, ccd=ccd)
 
-    def get(self, cutout=None):
+    def get(self):
         """
-        Get the artifact from VOSpace. 
-        
-        :param cutout: Section of the image to be retrieved from VOSpace. Can either be a CCD or SkyCoord object
-        with right ascension and declination attributes. 
+        Retrieves the FitsImage from VOSpace.
         """
 
-        # no cutout supplied, use get method from super class Artifact
-        if cutout is None:
+        # no ccd exists for the object, call Artifact's get method
+        if self.ccd is None:
             return super(FitsImage, self).get()
 
-        # If the cutout is an integer it should be a CCD.
-        # Can change to `elif self.ccd is not None:` if that's more correct.
-        # Currently needs the cutout argument to be explicitly inputted as the ccd integer for this to trigger.
-        # self.ccd always is something for FitsImage? Not sure. Perhaps it depends on how the object is instantiated.
-        elif isinstance(cutout, int):
-            ccd = "[{}]".format(self.ccd)
-            return self.cutout(ccd)
+        ccd = "[{}]".format(self.ccd+1)
 
-        # SkyCoord object has RA and DEC attributes, pass through as degree values
-        elif isinstance(cutout, SkyCoord):
-            return self.ra_dec_cutout(cutout.ra.deg, cutout.dec.deg)
+        return self.cutout(cutout=ccd)
 
-        # removing "[ccd]" from the uri
-        # uri = re.sub('\[\d{1,2}\]', '', self.uri)  # Not sure if this is needed
-
-        else:
-            raise TypeError('Cutout: {} type is incorrect. Expected: int or SkyCoord. Got: {}'.format(cutout,
-                                                                                                      type(cutout)))
-
-    def ra_dec_cutout(self, ra, dec):
+    def ra_dec_cutout(self, skycoord):
         """
-        Takes the right ascension and declination as floating point values and 
-         returns that portion of the image. 
-        Cutout radius set to 1 arcminute. 
-        :param ra: right ascension in degrees
-        :param dec: declination in degrees
-        :return: 
+        Builds a cutout string from a SkyCoord object and calls cutout method to retrieve image from VOSpace.
+        
+        :param skycoord: SkyCoord object with associated RA and DEC attributes
         """
 
-        if not isinstance(ra, float) or not isinstance(dec, float):
-            raise TypeError('RA: {} or DEC: {} not given as floating point vales.'.format(ra, dec))
+        if not isinstance(skycoord, SkyCoord):
+            raise TypeError('Input argument "{}" not given as a SkyCoord object.'.format(skycoord))
 
-        # make the 1/60th of a degree parameter a global variable (CUTOUT_RADIUS?) if it's correct
-        ra_dec = "({}, {}, {})".format(str(ra), str(dec), 1.0/60.0)
-        return self.cutout(ra_dec)
+        # CUTOUT_RADIUS is 1.0/60.0, one arc minute. Formatting coordinates as decimal degrees into a string
+        ra_dec = "({},{},{})".format(skycoord.ra.deg, skycoord.dec.deg, CUTOUT_RADIUS)
+
+        return self.cutout(cutout=ra_dec, return_file=False)
 
 
 class HPXCatalog(FitsTable):
@@ -937,7 +923,7 @@ class Header(FitsImage):
         :rtype: Header
         """
         return self.headers[self.ccd+1]
-                            
+
 
 def make_path(uri):
     """Build a path, with recursion. Don't catch errors."""
