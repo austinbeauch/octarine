@@ -541,10 +541,6 @@ class FitsImage(FitsArtifact):
         hdu_list = fits.open(fpt, scale_back=False)
         hdu_list.verify('silentfix+ignore')
 
-        # cutout passed here is in ra/dec, needs to be in x,y
-        # change the hdu_list indices to 1 instead of 0?
-        # print "cutout in cutout(): ", cutout
-        #
         # hdu_list[1].header['DATASEC'] = reset_datasec(cutout,
         #                                               hdu_list[1].header['DATASEC'],
         #                                               hdu_list[1].header['NAXIS1'],
