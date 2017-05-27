@@ -192,6 +192,10 @@ def main():
                         action="store",
                         default="vos:cfis/solar_system/dbimages",
                         help='vospace dbimages containerNode')
+    parser.add_argument("--catalogs",
+                        action="store",
+                        default="catalogs",
+                        help='dbimages subdirectory where catalogs will be stored.')
     parser.add_argument("healpix",
                         type=int,
                         help="healpix to process")
@@ -212,6 +216,7 @@ def main():
     logging.info("Started {}".format(cmd_line))
 
     storage.DBIMAGES = args.dbimages
+    storage.CATALOG = args.catalogs
     prefix = ''
     version = 'p'
 
