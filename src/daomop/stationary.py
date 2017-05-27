@@ -20,6 +20,7 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force):
     """
     Retrieve the catalog from VOSspace, find the matching dataset_name/ccd combos and match against those.
 
+    :param pixel: Which HPX Pixel should we build a catalog for.
     :param ccd: chip to retrieve for matching
     :param expnum: exposure number to retrieve for match
     :param force:
@@ -75,6 +76,7 @@ def split_to_hpx(pixel, catalog):
         healpix_catalog.table = healpix_catalog.table[healpix_catalog.table['dataset_name'] != dataset_name]
         healpix_catalog.table = vstack([healpix_catalog.table, catalog.table[catalog.table['HEALPIX'] == pix]])
     except NotFoundException:
+        healpix_catalog = storage.HPXCatalog(pixel=pix)
         healpix_catalog.hdulist = fits.HDUList()
         healpix_catalog.hdulist.append(catalog.hdulist[0])
         healpix_catalog.table = catalog.table[catalog.table['HEALPIX'] == pix]
@@ -152,7 +154,8 @@ def match(pixel, expnum, ccd):
             if npts < 10:
                 flux_radius_lim = 1.8
             else:
-                flux_radius_lim = numpy.median(match_catalog.table['FLUX_RADIUS'][match_catalog.table['MAGERR_AUTO'] < 0.002])
+                flux_radius_lim = numpy.median(
+                    match_catalog.table['FLUX_RADIUS'][match_catalog.table['MAGERR_AUTO'] < 0.002])
                 
             trim_condition = numpy.all((match_catalog.table['X_IMAGE'] > datasec[0],
                                         match_catalog.table['X_IMAGE'] < datasec[1],
@@ -219,7 +222,6 @@ def main():
         ccd = overlap[1]
         run(args.healpix, expnum, ccd, prefix, version, args.dry_run, args.force)
     return exit_code
-
 
 
 if __name__ == '__main__':
