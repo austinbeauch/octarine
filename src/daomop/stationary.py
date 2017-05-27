@@ -10,6 +10,7 @@ import numpy
 import argparse
 import logging
 import traceback
+from cadcutils.exceptions import NotFoundException
 
 task = "stationary"
 dependency = None
@@ -65,25 +66,20 @@ def split_to_hpx(pixel, catalog):
     image = storage.Image(catalog.observation, ccd=catalog.ccd, version=catalog.version)
     catalog.table['dataset_name'] = len(catalog.table)*[dataset_name]
     catalog.table['mid_mjdate'] = image.header['MJDATE'] + image.header['EXPTIME']/24./3600.0
-    catalog.table['mid_mjdate'] = image.header['EXPTIME']
+    catalog.table['exptime'] = image.header['EXPTIME']
 
     pix = pixel
-    if 1 == 1:
-    #for pix in numpy.unique(catalog.table['HEALPIX']):
+    try:
         healpix_catalog = storage.HPXCatalog(pixel=pix)
-        try:
-            healpix_catalog.get()
-            healpix_catalog.table = healpix_catalog.table[healpix_catalog.table['dataset_name'] != dataset_name]
-            healpix_catalog.table = vstack([healpix_catalog.table, catalog.table[catalog.table['HEALPIX'] == pix]])
-        except OSError as ex:
-            if ex.errno == errno.ENOENT:
-                healpix_catalog.hdulist = fits.HDUList()
-                healpix_catalog.hdulist.append(catalog.hdulist[0])
-                healpix_catalog.table = catalog.table[catalog.table['HEALPIX'] == pix]
-            else:
-                raise ex
-        healpix_catalog.write()
-        healpix_catalog.put()
+        healpix_catalog.get()
+        healpix_catalog.table = healpix_catalog.table[healpix_catalog.table['dataset_name'] != dataset_name]
+        healpix_catalog.table = vstack([healpix_catalog.table, catalog.table[catalog.table['HEALPIX'] == pix]])
+    except NotFoundException:
+        healpix_catalog.hdulist = fits.HDUList()
+        healpix_catalog.hdulist.append(catalog.hdulist[0])
+        healpix_catalog.table = catalog.table[catalog.table['HEALPIX'] == pix]
+    healpix_catalog.write()
+    healpix_catalog.put()
 
 
 def match(pixel, expnum, ccd):
@@ -125,24 +121,23 @@ def match(pixel, expnum, ccd):
     # Build the HPXID column by matching against the HPX catalogs that might exit.
     catalog.table['HPXID'] = -1
     healpix = pixel
-    # for healpix in numpy.unique(catalog.table['HEALPIX']):
-    if 1 == 1:
-        hpx_cat = storage.HPXCatalog(pixel=healpix)
-        hpx_cat_len = 0
-        try:
-            hpx_cat.get()
-            p2 = numpy.transpose((hpx_cat.table['X_WORLD'],
-                                  hpx_cat.table['Y_WORLD']))
-            idx1, idx2 = util.match_lists(p1, p2, tolerance=0.5 / 3600.0)
-            catalog.table['HPXID'][idx2.data[~idx2.mask]] = hpx_cat.table['HPXID'][~idx2.mask]
-            hpx_cat_len = len(hpx_cat.table)
-        except OSError as ose:
-            if ose.errno != errno.ENOENT:
-                raise ose
-        # for all non-matched sources in this healpix we increment the counter.
-        cond = numpy.all((catalog.table['HPXID'] < 0,
-                          catalog.table['HEALPIX'] == healpix), axis=0)
-        catalog.table['HPXID'][cond] = [hpx_cat_len + numpy.arange(cond.sum()), ]
+
+    hpx_cat = storage.HPXCatalog(pixel=healpix)
+    hpx_cat_len = 0
+    try:
+        hpx_cat.get()
+        p2 = numpy.transpose((hpx_cat.table['X_WORLD'],
+                              hpx_cat.table['Y_WORLD']))
+        idx1, idx2 = util.match_lists(p1, p2, tolerance=0.5 / 3600.0)
+        catalog.table['HPXID'][idx2.data[~idx2.mask]] = hpx_cat.table['HPXID'][~idx2.mask]
+        hpx_cat_len = len(hpx_cat.table)
+    except NotFoundException:
+        pass
+
+    # for all non-matched sources in this healpix we increment the counter.
+    cond = numpy.all((catalog.table['HPXID'] < 0,
+                      catalog.table['HEALPIX'] == healpix), axis=0)
+    catalog.table['HPXID'][cond] = [hpx_cat_len + numpy.arange(cond.sum()), ]
 
     catalog.table['MATCHES'] = 0
     catalog.table['OVERLAPS'] = 0
@@ -175,11 +170,8 @@ def match(pixel, expnum, ccd):
             catalog.table['MATCHES'][idx2.data[~idx2.mask]] += 1
             catalog.table['OVERLAPS'] += \
                 [match_image.polygon.isInside(row['X_WORLD'], row['Y_WORLD']) for row in catalog.table]
-        except OSError as ioe:
-            if ioe.errno == errno.ENOENT:
-                logging.info(str(ioe))
-                continue
-            raise ioe
+        except NotFoundException:
+            pass
 
     return catalog
 
