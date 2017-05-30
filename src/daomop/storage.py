@@ -54,7 +54,7 @@ FLATS_VOSPACE = 'vos:sgwyn/flats'
 ARCHIVE = 'CFHT'
 DEFAULT_FORMAT = 'fits'
 NSIDE = 32
-CUTOUT_RADIUS = 1.0/60.0
+CUTOUT_RADIUS = 1.0/60.0  # default radius to be "cut out" when calling ra_dec_cutout. Set to 1 arcminute, or 1/60th of a degree
 
 
 class MyRequests(object):
@@ -529,9 +529,21 @@ class FitsImage(FitsArtifact):
 
     def cutout(self, cutout, return_file=False):
         """
-        Given a string like '[##]' or '(__,__,__)' retrieve that portion of the image from VOSpace.
-        :param cutout: a string such as "(3.4,3.4,3.4)" or "[22]" to specify which potion 
-        of the image to return
+        Given a string such as '[CCD]', '[CCD][x1:x2,y1:y2]', or '(RA,DEC,RADIUS)', 
+         retrieve that portion of the image from VOSpace.
+        
+        For example:
+        
+        '[23]' will retrieve the entire CCD #23 from VOSpace.
+        
+        '[23][100:300,100:400]' will retrieve the specified x/y pixel section from CCD 23.
+         
+        '(75.7044083333, 23.9168472222, 0.0166666666667)' will retrieve part of the exposure specified by the WCS with  
+          RA: 75.7044083333 degrees
+          DEC: 23.9168472222 degrees
+         and a radius of 0.0166666666667 degrees (the default amount, which is set to one arcminute - 1/60 of a degree) 
+                
+        :param cutout: a string specifying which part of the exposure to return
         :param return_file
         :return:
         """
@@ -611,18 +623,21 @@ class FitsImage(FitsArtifact):
 
         return self.cutout(cutout=ccd)
 
-    def ra_dec_cutout(self, skycoord):
+    def ra_dec_cutout(self, skycoord, radius=CUTOUT_RADIUS):
         """
         Builds a cutout string from a SkyCoord object and calls cutout method to retrieve image from VOSpace.
-        
+        SkyCoord object stores the RA and DEC in both hr/m/s and degrees,
+         ra_dec_cutout uses the degrees form when passing through to the cutout method.
         :param skycoord: SkyCoord object with associated RA and DEC attributes
+        :param radius: Radius of the cutout image which is returned from VOSpace. Default: CUTOUT_RADIUS, 1.0/60.0,
+         one arcminute
         """
 
         if not isinstance(skycoord, SkyCoord):
             raise TypeError('Input argument "{}" not given as a SkyCoord object.'.format(skycoord))
 
-        # CUTOUT_RADIUS is 1.0/60.0, one arc minute. Formatting coordinates as decimal degrees into a string
-        ra_dec = "({},{},{})".format(skycoord.ra.deg, skycoord.dec.deg, CUTOUT_RADIUS)
+        # Formatting coordinates as decimal degrees into a string
+        ra_dec = "({},{},{})".format(skycoord.ra.deg, skycoord.dec.deg, radius)
 
         return self.cutout(cutout=ra_dec, return_file=False)
 
