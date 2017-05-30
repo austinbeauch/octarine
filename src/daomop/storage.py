@@ -54,7 +54,9 @@ FLATS_VOSPACE = 'vos:sgwyn/flats'
 ARCHIVE = 'CFHT'
 DEFAULT_FORMAT = 'fits'
 NSIDE = 32
-CUTOUT_RADIUS = 1.0/60.0  # default radius to be "cut out" when calling ra_dec_cutout. Set to 1 arcminute, or 1/60th of a degree
+
+# default radius to be "cut out" when calling ra_dec_cutout. Set to 1 arcminute, or 1/60th of a degree
+CUTOUT_RADIUS = units.Quantity(1.0/60.0, unit='degree')
 
 
 class MyRequests(object):
@@ -625,19 +627,31 @@ class FitsImage(FitsArtifact):
 
     def ra_dec_cutout(self, skycoord, radius=CUTOUT_RADIUS):
         """
-        Builds a cutout string from a SkyCoord object and calls cutout method to retrieve image from VOSpace.
-        SkyCoord object stores the RA and DEC in both hr/m/s and degrees,
+        Builds a cutout string from a SkyCoord object and a Quantity object.
+        Calls cutout method to retrieve image from VOSpace.
+        
+        SkyCoord object stores the RA and DEC in both hr/m/s and degree formats;
          ra_dec_cutout uses the degrees form when passing through to the cutout method.
+        
+        The radius specifies how much of the area surrounding the World Coordinate System point is returned 
+         in the cutout.
+        
         :param skycoord: SkyCoord object with associated RA and DEC attributes
-        :param radius: Radius of the cutout image which is returned from VOSpace. Default: CUTOUT_RADIUS, 1.0/60.0,
-         one arcminute
+        :param radius: astropy unit.Quantity object. Specifies radius of the cutout returned from VOSpace
         """
 
         if not isinstance(skycoord, SkyCoord):
             raise TypeError('Input argument "{}" not given as a SkyCoord object.'.format(skycoord))
 
+        # assumes a float input means degrees, converts to a Quantity object
+        if isinstance(radius, float):
+            radius = units.Quantity(radius, unit='degree')
+
+        elif not isinstance(radius, units.Quantity):
+            raise TypeError('Input argument "{}" not given as an astropy units.Quantity object nor a float.'.format(radius))
+
         # Formatting coordinates as decimal degrees into a string
-        ra_dec = "({},{},{})".format(skycoord.ra.deg, skycoord.dec.deg, radius)
+        ra_dec = "({},{},{})".format(skycoord.ra.deg, skycoord.dec.deg, radius.to('degree').value)
 
         return self.cutout(cutout=ra_dec, return_file=False)
 
