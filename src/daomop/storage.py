@@ -55,6 +55,9 @@ ARCHIVE = 'CFHT'
 DEFAULT_FORMAT = 'fits'
 NSIDE = 32
 
+# default radius to be "cut out" when calling ra_dec_cutout. Set to 1 arcminute, or 1/60th of a degree
+CUTOUT_RADIUS = units.Quantity(1.0/60.0, unit='degree')
+
 
 class MyRequests(object):
 
@@ -484,12 +487,11 @@ class FitsImage(FitsArtifact):
         """
         uri = "{}/{}".format(self.observation.dbimages, self.subdir)
 
-        if self.ccd is None:
-            return "{}/{}{}{}{}".format(uri, self.prefix, self.observation, self.version, self.ext)
+        return "{}/{}{}{}{}".format(uri, self.prefix, self.observation, self.version, self.ext)
 
-        return "{}/{}{}{}{}[{}]".format(uri,
-                                        self.prefix, self.observation, self.version, self.ext,
-                                        self.ccd+1)
+        # return "{}/{}{}{}{}[{}]".format(uri,
+        #                                 self.prefix, self.observation, self.version, self.ext,
+        #                                 self.ccd+1)
 
     @property
     def flat_field(self):
@@ -529,8 +531,21 @@ class FitsImage(FitsArtifact):
 
     def cutout(self, cutout, return_file=False):
         """
-        Get a sub-section of the image as a cutout.
-        :param cutout
+        Given a string such as '[CCD]', '[CCD][x1:x2,y1:y2]', or '(RA,DEC,RADIUS)', 
+         retrieve that portion of the image from VOSpace.
+        
+        For example:
+        
+        '[23]' will retrieve the entire CCD #23 from VOSpace.
+        
+        '[23][100:300,100:400]' will retrieve the specified x/y pixel section from CCD 23.
+         
+        '(75.7044083333, 23.9168472222, 0.0166666666667)' will retrieve part of the exposure specified by the WCS with  
+          RA: 75.7044083333 degrees
+          DEC: 23.9168472222 degrees
+         and a radius of 0.0166666666667 degrees (the default amount, which is set to one arcminute - 1/60 of a degree) 
+                
+        :param cutout: a string specifying which part of the exposure to return
         :param return_file
         :return:
         """
@@ -539,10 +554,12 @@ class FitsImage(FitsArtifact):
         fpt.seek(0)
         hdu_list = fits.open(fpt, scale_back=False)
         hdu_list.verify('silentfix+ignore')
-        hdu_list[0].header['DATASEC'] = reset_datasec(cutout,
-                                                      hdu_list[0].header['DATASEC'],
-                                                      hdu_list[0].header['NAXIS1'],
-                                                      hdu_list[0].header['NAXIS2'])
+
+        # hdu_list[1].header['DATASEC'] = reset_datasec(cutout,
+        #                                               hdu_list[1].header['DATASEC'],
+        #                                               hdu_list[1].header['NAXIS1'],
+        #                                               hdu_list[1].header['NAXIS2'])
+
         if not hdu_list:
             raise OSError(errno.EFAULT, "Failed to retrieve cutout of image", self.uri)
 
@@ -578,7 +595,7 @@ class FitsImage(FitsArtifact):
         :return: FitsImage object of the associated dataset_name and ccd
         """
         # assuming frame is supposed to be in the form '1111111p11'
-        x = re.match("\d{7}[A-z]\d{2}", frame)
+        x = re.match('\d{7}[A-z]\d{2}', frame)
 
         # if there is no regex match, frame must be in the wrong format
         if x is None:
@@ -594,6 +611,49 @@ class FitsImage(FitsArtifact):
             raise ValueError('CCD # {} from frame {} is out of range.'.format(ccd, frame))
 
         return FitsImage(obs, ccd=ccd)
+
+    def get(self):
+        """
+        Retrieves the FitsImage from VOSpace.
+        """
+
+        # no ccd exists for the object, call Artifact's get method
+        if self.ccd is None:
+            return super(FitsImage, self).get()
+
+        ccd = "[{}]".format(self.ccd+1)
+
+        return self.cutout(cutout=ccd)
+
+    def ra_dec_cutout(self, skycoord, radius=CUTOUT_RADIUS):
+        """
+        Builds a cutout string from a SkyCoord object and a Quantity object.
+        Calls cutout method to retrieve image from VOSpace.
+        
+        SkyCoord object stores the RA and DEC in both hr/m/s and degree formats;
+         ra_dec_cutout uses the degrees form when passing through to the cutout method.
+        
+        The radius specifies how much of the area surrounding the World Coordinate System point is returned 
+         in the cutout.
+        
+        :param skycoord: SkyCoord object with associated RA and DEC attributes
+        :param radius: astropy unit.Quantity object. Specifies radius of the cutout returned from VOSpace
+        """
+
+        if not isinstance(skycoord, SkyCoord):
+            raise TypeError('Input argument "{}" not given as a SkyCoord object.'.format(skycoord))
+
+        # assumes a float input means degrees, converts to a Quantity object
+        if isinstance(radius, float):
+            radius = units.Quantity(radius, unit='degree')
+
+        elif not isinstance(radius, units.Quantity):
+            raise TypeError('Input argument "{}" not given as an astropy units.Quantity object nor a float.'.format(radius))
+
+        # Formatting coordinates as decimal degrees into a string
+        ra_dec = "({},{},{})".format(skycoord.ra.deg, skycoord.dec.deg, radius.to('degree').value)
+
+        return self.cutout(cutout=ra_dec, return_file=False)
 
 
 class HPXCatalog(FitsTable):
@@ -888,7 +948,7 @@ class Header(FitsImage):
         :rtype: Header
         """
         return self.headers[self.ccd+1]
-                            
+
 
 def make_path(uri):
     """Build a path, with recursion. Don't catch errors."""
