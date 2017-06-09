@@ -56,7 +56,7 @@ DEFAULT_FORMAT = 'fits'
 NSIDE = 32
 
 # default radius to be "cut out" when calling ra_dec_cutout. Set to 1 arcminute, or 1/60th of a degree
-CUTOUT_RADIUS = units.Quantity(1.0/60.0, unit='degree')
+CUTOUT_RADIUS = 1.0 * units.arcminute
 
 
 class MyRequests(object):
@@ -628,7 +628,7 @@ class FitsImage(FitsArtifact):
     def ra_dec_cutout(self, skycoord, radius=CUTOUT_RADIUS):
         """
         Builds a cutout string from a SkyCoord object and a Quantity object.
-        Calls cutout method to retrieve image from VOSpace.
+        Calls cutout method to retrieve a sub-section of the image at the specified RA/DEC location.
         
         SkyCoord object stores the RA and DEC in both hr/m/s and degree formats;
          ra_dec_cutout uses the degrees form when passing through to the cutout method.

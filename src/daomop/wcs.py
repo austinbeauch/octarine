@@ -116,10 +116,18 @@ class WCS(astropy_wcs.WCS):
                                 pv=self.pv,
                                 nord=self.nord)
         except Exception as ex:
-            logger.warning("sky2xy raised exception: {0}".format(ex))
-            logger.warning("Reverted to CD-Matrix WCS to convert: {0} {1} ".format(ra, dec))
+            logging.warning("sky2xy raised exception: {0}".format(ex))
+            logging.warning("Reverted to CD-Matrix WCS to convert: {0} {1} ".format(ra, dec))
         pos = self.wcs_world2pix([[ra, dec], ], 1)
         return pos[0][0], pos[0][1]
+
+    def all_pix2world(self, *args, **kwargs):
+        try:
+            super(WCS, self).all_pix2world(self.header, *args, **kwargs)
+
+        except Exception as ex:
+            logging.warning("all_pix2world raised exception: {0}".format(ex))
+            raise ex
 
 
 def sky2xypv(ra, dec, crpix1, crpix2, crval1, crval2, dc, pv, nord, maxiter=300):
