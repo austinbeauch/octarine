@@ -13,7 +13,7 @@ from astropy import units
 from astropy.table import Table
 from astropy.io import fits, ascii
 from astropy.time import Time
-from cadcutils.exceptions import BadRequestException, AlreadyExistsException
+from cadcutils.exceptions import BadRequestException, AlreadyExistsException, NotFoundException
 
 import util
 import vospace
@@ -57,7 +57,7 @@ DEFAULT_FORMAT = 'fits'
 NSIDE = 32
 
 # default radius to be "cut out" when calling ra_dec_cutout. Set to 1 arcminute, or 1/60th of a degree
-CUTOUT_RADIUS = 1.0 * units.arcminute
+CUTOUT_RADIUS = 0.1 * units.arcminute
 
 
 class MyRequests(object):
@@ -557,6 +557,9 @@ class FitsImage(FitsArtifact):
             if "No matching data" in str(bre):
                 logging.error(str(bre))
                 return []
+        except NotFoundException:
+            self._ext = ".fits"
+            copy(self.uri + cutout, fpt.name)
 
         fpt.seek(0)
         hdu_list = fits.open(fpt, scale_back=False)
