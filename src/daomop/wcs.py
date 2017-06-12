@@ -122,12 +122,15 @@ class WCS(astropy_wcs.WCS):
         return pos[0][0], pos[0][1]
 
     def all_pix2world(self, *args, **kwargs):
-        try:
-            super(WCS, self).all_pix2world(self.header, *args, **kwargs)
+        logging.warning("Trying the Monkey Patched WCS function.")
+        logging.warning("args: {}".format(args))
+        logging.warning("kwargs: {}".format(kwargs))
 
+        try:
+            super(WCS, self).all_pix2world(*args, **kwargs)
         except Exception as ex:
             logging.warning("all_pix2world raised exception: {0}".format(ex))
-            raise ex
+            self.xy2sky(*args, **kwargs)
 
 
 def sky2xypv(ra, dec, crpix1, crpix2, crval1, crval2, dc, pv, nord, maxiter=300):
