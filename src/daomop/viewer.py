@@ -1,16 +1,58 @@
-from ginga.web.pgw import ipg
-import storage
+from ginga.web.pgw import ipg, Widgets, Viewers
 from astropy.wcs import WCS
-import wcs
+import storage
 import mp_ephem
 import logging
 
-WCS.all_pix2world = wcs.WCS.all_pix2world
 
 logging.basicConfig(level=logging.INFO)
 
 
+class GoodGui(ipg.EnhancedCanvasView):
+    def build_gui(self, container):
+        vbox = Widgets.VBox()
+        vbox.set_border_width(2)
+        vbox.set_spacing(1)
+
+        w = Viewers.GingaViewerWidget(viewer=self)
+        vbox.add_widget(w, stretch=1)
+
+        self.pixel_base = 1.0
+
+        self.readout = Widgets.Label("")
+        vbox.add_widget(self.readout, stretch=0)
+
+        # self.set_callback('none-move', self.motion_cb)
+        self.set_callback('cursor-changed', self.motion_cb)
+        accept = Widgets.Button("Accept")
+        accept.add_callback('activated', lambda x: self.onscreen_message("Accept", 1))
+
+        reject = Widgets.Button("Reject")
+        reject.add_callback('activated', lambda x: self.onscreen_message("Reject", 1))
+
+        wclear = Widgets.Button("Clear")
+        wclear.add_callback('activated', lambda x: self.clear())
+
+        vbox.add_widget(accept, stretch=1)
+        vbox.add_widget(reject, stretch=1)
+        vbox.add_widget(wclear, stretch=1)
+
+        # need to put this in an hbox with an expanding label or the
+        # browser wants to resize the canvas, distorting it
+        hbox = Widgets.HBox()
+        hbox.add_widget(vbox, stretch=0)
+        hbox.add_widget(Widgets.Label(''), stretch=1)
+
+        container.set_widget(hbox)
+
+
 class Viewer(object):
+
+    def _write(self):
+
+        with open('filename', 'w') as fobj:
+            for ob in self.obs:
+                fobj.write(ob.to_string())
 
     def __init__(self, target, dbimages="vos:jkavelaars/TNORecon/dbimages"):
         """
@@ -22,7 +64,7 @@ class Viewer(object):
         """
 
         # standard setup commands; creating viewing window
-        self.server = ipg.make_server(host='localhost', port=9914, use_opencv=False)
+        self.server = ipg.make_server(host='localhost', port=9914, use_opencv=False, viewer_class=GoodGui)
         self.server.start(no_ioloop=True)
         self.viewer = self.server.get_viewer('v1')
         self.viewer.enable_autocuts('on')
@@ -47,23 +89,16 @@ class Viewer(object):
         self.obs_number = 0
         self.image = None
         self.image_values = None
-
-        # eventually store different HDU's for image switching,
-        # probably will be replaced with a single index counter variable in _key_press
         self._current_image = None
 
     def load(self, obs_number=0):
         """
         With the viewing window already created, Creates a FitsImage object and loads its cutout into the window.
-        Calls _mark_aperture to draw a small circle around the celestial object pertaining to that cutout.
 
         :param obs_number: index of which line in the file gets loaded/displayed in the viewer
         """
         self.obs_number = obs_number
         self._load()
-
-        # Attempt to monkey patch all_pix2world, doesn't seem to be getting called before keyword error is thrown.
-        # Warnings probably being thrown before pix2world is called.
 
     def _mark_aperture(self):
         """
@@ -71,7 +106,7 @@ class Viewer(object):
          being observed.
         """
         ra, dec = self.obs[self.obs_number].coordinate.ra, self.obs[self.obs_number].coordinate.dec
-        x, y = wcs.WCS(self._loaded_images[self.obs_number].header).sky2xy(ra, dec, usepv=True)
+        x, y = WCS(self._loaded_images[self.obs_number].header).all_world2pix(ra, dec, 0)
         self.canvas.deleteAllObjects()
         self.canvas.add(self.circle(x, y, radius=10, color='red'))
 
@@ -101,8 +136,6 @@ class Viewer(object):
                                      self.orb.dra.to('deg').value,
                                      self.orb.ddec.to('deg').value, color='red'))
 
-    # button press methods NEED all these arguments to work even if they are not used.
-    # Might be a weird Ginga thing.
     def _key_press(self, canvas, keyname, opn, viewer):
         """
         Method called once a keyboard stoke has been detected. Using two un-bound keys, f & g, to cycle different
@@ -117,23 +150,16 @@ class Viewer(object):
         :param viewer: Ginga EnhancedCanvasView object
         """
         logging.debug("Got key: {} from canvas: {} with opn: {} from viewer: ".format(canvas, keyname, opn, viewer))
-        if keyname == 'f':  # index 0
-            self.viewer.set_onscreen_message("pressed f")  # TODO: remove onscreen messages once finished implementation
-
-            # if/else statements to speed up image switching. Only needs to grab the hdu from the database
+        if keyname == 'f':
+            # if/else statements for blinking. Only needs to grab the hdu from the database
             #  once, after that it saves the hdu so it can be quickly loaded into the viewer again.
-            # Currently only switching between 2 images. Need more information as to how other .ast files are set up
-            #  before implementing an iterative solution to image switching.
-            # Is there a quantity variable storing the amount of lines that can be iterated?
-            # In the case that there is an amount variable, set up a simple counter to act as the index,
-            #  increment or decrement appropriately, loading each image into the viewer, checking to make sure it's not
-            #  going out of range. If the user is about to go below 0 or above the max range, just do nothing.
-            #  Probably don't need any warning, but it would be possible to have an onscreen message pop up.
-            # Retrieving the image cutouts definitely takes more time than needed, not sure if anything in storage.py
-            #  can be sped up or if it's a server issue.
-            self.obs_number += 1
-        elif keyname == 'g':
             self.obs_number -= 1
+        elif keyname == 'g':
+            self.obs_number += 1
+        elif keyname == 'z':
+            pass                # soon to be accept/reject shortcuts
+        elif keyname == 'c':
+            self.accept()
         else:
             logging.warning("Unknown keystroke {}".format(keyname))
             return
@@ -144,14 +170,19 @@ class Viewer(object):
     def _load(self):
         """
         Checks if an HDU has been loaded already and retrieves if needed and then displays that HDU.
+        Calls _mark_aperture to draw a small circle around the celestial object.
         """
         # load the image if not already available, for now we'll put this in here.
         self.viewer.clear()
         if self._loaded_images[self.obs_number] is None:
             self.get_hdu(self.obs_number)
+
+        # pv_to_sip(self._loaded_images[self.obs_number].header)
+        # logging.info(self._loaded_images[self.obs_number].header)
+
         self.viewer.load_hdu(self._loaded_images[self.obs_number])
         self._mark_aperture()
-        self.viewer.set_onscreen_message("Loaded: {}".format(self.obs[self.obs_number].comment.frame))
+        self.viewer.onscreen_message("Loaded: {}".format(self.obs[self.obs_number].comment.frame), delay=3)
 
     def get_hdu(self, obs_number):
         """
@@ -166,6 +197,10 @@ class Viewer(object):
         hdu = image.ra_dec_cutout(obs_record.coordinate)[-1]  # always index 2?
         self._loaded_images[obs_number] = hdu
         logging.info("Retrieved {} and stored {}".format(obs_number, self._loaded_images))
+        return
+
+    def accept(self):
+        logging.warning("Accept keypress")
         return
 
     def __del__(self):

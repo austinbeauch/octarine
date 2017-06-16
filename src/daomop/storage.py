@@ -14,6 +14,7 @@ from astropy.table import Table
 from astropy.io import fits, ascii
 from astropy.time import Time
 from cadcutils.exceptions import BadRequestException, AlreadyExistsException, NotFoundException
+from sip_tpv import pv_to_sip
 
 import util
 import vospace
@@ -572,7 +573,8 @@ class FitsImage(FitsArtifact):
 
         if not hdu_list:
             raise OSError(errno.EFAULT, "Failed to retrieve cutout of image", self.uri)
-
+        for hdu in hdu_list:
+            pv_to_sip(hdu.header)
         self._header = [None]
         for hdu in hdu_list:
             self._header.append(hdu.header)
@@ -658,7 +660,8 @@ class FitsImage(FitsArtifact):
             radius = units.Quantity(radius, unit='degree')
 
         elif not isinstance(radius, units.Quantity):
-            raise TypeError('Input argument "{}" not given as an astropy units.Quantity object nor a float.'.format(radius))
+            raise TypeError('Input argument "{}" not given as an astropy'
+                            ' units.Quantity object nor a float.'.format(radius))
 
         # Formatting coordinates as decimal degrees into a string
         ra_dec = "({},{},{})".format(skycoord.ra.deg, skycoord.dec.deg, radius.to('degree').value)
