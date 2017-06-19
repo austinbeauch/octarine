@@ -258,7 +258,7 @@ class TimeMPC(TimeString):
     usage:
 
     from astropy.time.core import Time
-    Time.FORMATS[TimeMPC.name] = TimeMPC
+    Time.FORMATS[TimeMPC.target_name] = TimeMPC
 
     t = Time('2000 01 01.00001', format='mpc', scale='utc')
 
