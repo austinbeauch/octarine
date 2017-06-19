@@ -18,7 +18,7 @@ def run(dataset_name):
     """Given a dataset_name created the desired dbimages directories
     and links to the raw and processed data files stored at CADC and vospace.
 
-    @param dataset_name: the name of the CFHT dataset to make a link to.
+    @param dataset_name: the target_name of the CFHT dataset to make a link to.
     """
 
     observation = Observation(dataset_name)

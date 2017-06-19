@@ -1,4 +1,5 @@
 """OSSOS VOSpace storage convenience package."""
+import json
 import logging
 import errno
 import os
@@ -57,7 +58,7 @@ ARCHIVE = 'CFHT'
 DEFAULT_FORMAT = 'fits'
 NSIDE = 32
 
-# default radius to be "cut out" when calling ra_dec_cutout. Set to 1 arcminute, or 1/60th of a degree
+# default radius to be "cut out" when calling ra_dec_cutout. Set to .1 arc minute, or 1/360th of a degree
 CUTOUT_RADIUS = 0.1 * units.arcminute
 
 
@@ -462,9 +463,9 @@ class FitsImage(FitsArtifact):
     def footprint(self):
         datasec = util.get_pixel_bounds_from_datasec_keyword(self.header['DATASEC'])
         corners = numpy.array([[datasec[0][0], datasec[1][0]],
-                            [datasec[0][0], datasec[1][1]],
-                            [datasec[0][1], datasec[1][1]],
-                            [datasec[0][1], datasec[1][0]]], dtype = numpy.float64)
+                               [datasec[0][0], datasec[1][1]],
+                               [datasec[0][1], datasec[1][1]],
+                               [datasec[0][1], datasec[1][0]]], dtype=numpy.float64)
         self._footprint = self.wcs.wcs_pix2world(corners, 1)
         self._footprint = numpy.concatenate((self._footprint, numpy.array([self._footprint[0]])), axis=0)
         return self._footprint
@@ -472,7 +473,7 @@ class FitsImage(FitsArtifact):
     @property
     def polygon(self):
         if self._polygon is None:
-           self._polygon = MyPolygon.from_footprint(self.footprint)
+            self._polygon = MyPolygon.from_footprint(self.footprint)
         return self._polygon
 
     @property
@@ -600,7 +601,7 @@ class FitsImage(FitsArtifact):
     def from_frame(cls, frame):
         """
         Takes a frame number and creates a FitsImage object.
-        The frame number of an exposure contains its 7-digit dataset name (eg. 2222222),
+        The frame number of an exposure contains its 7-digit dataset target_name (eg. 2222222),
          its version (e.g. 'p'), and its ccd (e.g. 24).
          
         :param frame: frame number
@@ -671,14 +672,16 @@ class FitsImage(FitsArtifact):
 
 class HPXCatalog(FitsTable):
 
-    def __init__(self, pixel, version="_cat", ext=".fits", subdir="", nside=None, **kwargs):
+    def __init__(self, pixel, nside=None, **kwargs):
         self.pixel = pixel
+        kwargs['version'] = kwargs.get('version', '_cat')
+        kwargs['ext'] = kwargs.get('ext', '.fits')
+        kwargs['subdir'] = kwargs.get('subdir', "")
         if nside is None:
             nside = util.HEALPIX_NSIDE
         self.nside = nside
         dbimages = os.path.join(os.path.dirname(DBIMAGES), CATALOG)
-        super(HPXCatalog, self).__init__(Observation(self.dataset_name, dbimages=dbimages),
-                                         version=version, ext=ext, subdir=subdir, **kwargs)
+        super(HPXCatalog, self).__init__(Observation(self.dataset_name, dbimages=dbimages), **kwargs)
 
     @property
     def skycoord(self):
@@ -689,9 +692,29 @@ class HPXCatalog(FitsTable):
         number_of_pix = 12 * self.nside ** 2
         field_size = len(str(number_of_pix))
         dataset_name = ("{" + ":0{:d}".format(field_size) + "}").format(self.pixel)
-        return "HPX_{}_RA_{:4.1f}_DEC_{:+4.1f}".format(dataset_name,
-                                                       self.skycoord.ra.degree,
-                                                       self.skycoord.dec.degree)
+        return "HPX_{}_RA_{:04.1f}_DEC_{:+04.1f}".format(dataset_name,
+                                                         self.skycoord.ra.degree,
+                                                         self.skycoord.dec.degree)
+
+
+class JSONCatalog(HPXCatalog):
+    """
+    The JSON record containing all the candidates found in the source HPX catalog associated with the pixel.
+    """
+    def __init__(self, pixel):
+        super(JSONCatalog, self).__init__(pixel, version="_mjdalltracks", ext=".json")
+        self._json = None
+
+    @property
+    def json(self):
+        """
+        Return the json record contained in the Catalog file.
+        """
+        if self._json is None:
+            self.get()
+            with open(self.filename, 'r') as jobj:
+                self._json = json.load(jobj)
+        return self._json
 
 
 def set_tags_on_uri(uri, keys, values=None):
@@ -803,7 +826,7 @@ def get_status(task, prefix, expnum, version, ccd, return_message=False):
     """
     Report back status of the given program by looking up the associated VOSpace annotation.
 
-    @param task:  name of the process or task that will be checked.
+    @param task:  target_name of the process or task that will be checked.
     @param prefix: prefix of the file that was processed (often fk or None)
     @param expnum: which exposure number (or base filename)
     @param version: which version of that exposure (p, s, o)
@@ -823,7 +846,7 @@ def get_status(task, prefix, expnum, version, ccd, return_message=False):
 def set_status(task, prefix, expnum, version, ccd, status):
     """
     set the processing status of the given program.
-    @param task: name of the processing task
+    @param task: target_name of the processing task
     @param prefix: was there a prefix on the exposure number processed?
     @param expnum: exposure number processed.
     @param version: which version of the exposure? (p, s, o)
@@ -971,7 +994,7 @@ def make_path(uri):
 def mkdir(dirname):
     """make directory tree in vospace.
 
-    @param dirname: name of the directory to make
+    @param dirname: target_name of the directory to make
     """
     dir_list = []
 
@@ -997,9 +1020,11 @@ def delete(uri):
 def make_link(source, destination):
     logging.debug("Linking {} to {}".format(source, destination))
     try:
-       return vospace.client.link(source, destination)
+        return vospace.client.link(source, destination)
     except AlreadyExistsException as aee:
-       return True
+        logging.debug(str(aee))
+        logging.debug("Link destination ({}) already exists.".format(destination))
+        return True
 
 
 def listdir(directory, force=False):
@@ -1215,17 +1240,49 @@ def tap_query(query):
                 LANG="ADQL",
                 FORMAT="tsv")
 
+    logging.debug("Doing TAP Query using url: %s" % (str(TAP_WEB_SERVICE)))
     logging.debug("QUERY: {}".format(data["QUERY"]))
     try:
         result = requests.get(TAP_WEB_SERVICE, params=data, verify=False)
         result.raise_for_status()
+        table_reader = ascii.get_reader(Reader=ascii.Basic)
+        table_reader.header.splitter.delimiter = '\t'
+        table_reader.data.splitter.delimiter = '\t'
+        table = table_reader.read(result.text)
+        return table
     except Exception as ex:
         logging.error(str(ex))
+        raise ex
 
-    logging.debug("Doing TAP Query using url: %s" % (str(result.url)))
 
-    table_reader = ascii.get_reader(Reader=ascii.Basic)
-    table_reader.header.splitter.delimiter = '\t'
-    table_reader.data.splitter.delimiter = '\t'
-    table = table_reader.read(result.text)
-    return table
+class Downloader(object):
+    def __init__(self):
+        self._downloaded_images = dict()
+
+    @staticmethod
+    def image_key(obs_record):
+        """
+
+        :param obs_record: the observation record to get the key for.
+        :type obs_record: mp_ephem.ObsRecord
+        :return: the key for the given observation record.
+        """
+        return obs_record.comment.frame + obs_record.provisional_name
+
+    def get(self, obs_record):
+        if self.image_key(obs_record) not in self._downloaded_images:
+            self._downloaded_images[self.image_key(obs_record)] = self.get_hdu(obs_record)
+        return self._downloaded_images[self.image_key(obs_record)]
+
+    def get_hdu(self, obs_record):
+        """
+        Retrieve a fits image associated with a given obs_record and return the HDU off the assocaited cutout.
+
+        :param obs_record: the ObsRecord for which the image is to be retrieved
+        :type obs_record: mp_ephem.ObsRecord
+        :return: fits.ImageHDU
+        """
+        logging.info("Retrieving {}".format(self.image_key(obs_record)))
+        image = FitsImage.from_frame(obs_record.comment.frame)
+        hdu = image.ra_dec_cutout(obs_record.coordinate)[-1]
+        return hdu
