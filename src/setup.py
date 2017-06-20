@@ -11,7 +11,8 @@ dependencies = ['requests >= 2.7',
                 'Polygon2',
                 'scipy',
                 'mp_ephem',
-                'ginga']
+                'ginga',
+                'sip_tpv']
 
 
 if sys.version_info[0] > 2:

@@ -1,13 +1,70 @@
-from ginga.web.pgw import ipg, Widgets, Viewers
-from astropy.wcs import WCS
 import logging
+from math import atan2
 
 import candidate
+from ginga.web.pgw import ipg, Widgets, Viewers
+from astropy.wcs import WCS
 
 dbimages = "vos:jkavelaars/TNORecon/dbimages"
 logging.basicConfig(level=logging.INFO)
 
 
+class ValidateGui(ipg.EnhancedCanvasView):
+
+    def build_gui(self, container):
+        self.candidates = None
+
+        vbox = Widgets.VBox()
+        vbox.set_border_width(2)
+        vbox.set_spacing(1)
+
+        w = Viewers.GingaViewerWidget(viewer=self)
+        vbox.add_widget(w, stretch=1)
+
+        self.pixel_base = 1.0
+        self.readout = Widgets.Label("")
+
+        vbox.add_widget(self.readout, stretch=0)
+
+        self.set_callback('cursor-changed', self.motion_cb)
+
+        load_candidates = Widgets.TextEntry()
+        load_candidates.add_callback('activated', lambda x: self.load_candiates(x))
+
+        accept = Widgets.Button("Accept")
+        accept.add_callback('activated', lambda x: self.onscreen_message("Accept", 1))
+
+        reject = Widgets.Button("Reject")
+        reject.add_callback('activated', lambda x: self.onscreen_message("Reject", 1))
+
+        wclear = Widgets.Button("Clear")
+        wclear.add_callback('activated', lambda x: self.clear())
+
+        hbox = Widgets.HBox()
+        h2box = Widgets.HBox()
+        h3box = Widgets.HBox()
+
+        h2box.add_widget(accept, stretch=0)
+        h2box.add_widget(reject, stretch=0)
+        h2box.add_widget(wclear, stretch=0)
+        h2box.set_spacing(5)
+        h2box.set_margins(0, 0, 25, 0)
+        h3box.add_widget(load_candidates, stretch=1)
+
+        vbox.add_widget(h2box, stretch=1)
+        vbox.add_widget(h3box, stretch=1)
+
+        # need to put this in an hbox with an expanding label or the
+        # browser wants to resize the canvas, distorting it
+        hbox.add_widget(vbox, stretch=0)
+        hbox.add_widget(Widgets.Label(''), stretch=1)
+
+        container.set_widget(hbox)
+
+    def load_candiates(self, event):
+        # print(dir(event))
+        logging.info("Accepted candidate entry: {}".format(event.text))
+        self.candidates = candidate.CandidateSet(int(event.text))
 
 
 class WebServerFactory(object):
@@ -36,55 +93,9 @@ class WebServerFactory(object):
         self.web_server.stop()
 
 
-class ValidateGui(ipg.EnhancedCanvasView):
-
-    def build_gui(self, container):
-        self.candidates = None
-        vbox = Widgets.VBox()
-        vbox.set_border_width(2)
-        vbox.set_spacing(1)
-
-        w = Viewers.GingaViewerWidget(viewer=self)
-        vbox.add_widget(w, stretch=1)
-
-        vbox.add_widget(self.readout, stretch=0)
-
-        load_candidates = Widgets.TextEntry()
-        load_candidates.add_callback('load_candidates', lambda  x: self.load_candiates(x))
-        self.add_callback()
-
-        # self.set_callback('none-move', self.motion_cb)
-        self.set_callback('cursor-changed', self.motion_cb)
-        accept = Widgets.Button("Accept")
-        accept.add_callback('activated', lambda x: self.onscreen_message("Accept", 1))
-
-        reject = Widgets.Button("Reject")
-        reject.add_callback('activated', lambda x: self.onscreen_message("Reject", 1))
-
-        wclear = Widgets.Button("Clear")
-        wclear.add_callback('activated', lambda x: self.clear())
-
-        vbox.add_widget(accept, stretch=1)
-        vbox.add_widget(reject, stretch=1)
-        vbox.add_widget(wclear, stretch=1)
-        vbox.add_widget(load_candidates, stretch=1)
-
-        # need to put this in an hbox with an expanding label or the
-        # browser wants to resize the canvas, distorting it
-        hbox = Widgets.HBox()
-        hbox.add_widget(vbox, stretch=0)
-        hbox.add_widget(Widgets.Label(''), stretch=1)
-
-        container.set_widget(hbox)
-
-    def load_candiates(self, event):
-        print(event)
-        self.candidates = candidate.CandidateSet(event.text)
-
-
 class ImageViewer(object):
 
-    def __init__(self, gui, downloader, *args, **kwargs):
+    def __init__(self, downloader, *args, **kwargs):
         """
         Initialization of a local, web-client based server for displaying images. The viewer should automatically pop
          up in a new tab.
@@ -98,13 +109,18 @@ class ImageViewer(object):
         self.readout = Widgets.Label("")
 
         # standard setup commands; creating viewing window
-        self.viewer = gui
+        self.web_server = ipg.make_server(host="localhost",
+                                          port=9914,
+                                          use_opencv=False,
+                                          viewer_class=ValidateGui)
+        self.web_server.start(no_ioloop=True)
+        self.viewer = self.web_server.get_viewer("ID")
         self.viewer.enable_autocuts('on')
         self.viewer.set_autocut_params('zscale')
         self.viewer.open()
 
         self.downloader = downloader
-        self.candidates = self.viewer.candidates
+
         # creating drawing canvas; initializing polygon types
         self.canvas = self.viewer.add_canvas()
         self.circle = self.canvas.get_draw_class('circle')
@@ -112,20 +128,21 @@ class ImageViewer(object):
 
         # creating key-press event handling
         self.canvas.add_callback('key-press', self._key_press, 'key', self.viewer)
-        self.canvas.add_callback('key-press', self._key_press, 'key', self.viewer)
 
         self.obs_number = 0
+        self.candidate = None
         self.image = None
         self.image_values = None
         self._current_image = None
+        self.pan = None
+        self.zoom = None
 
     def _write(self):
 
         with open(self.candidate.observations[0].provisional_name+".ast", 'w+') as fobj:
             for ob in self.candidate.observations:
                 fobj.write(ob.to_string())
-        self.candidate = self.candidates.next()
-
+        self.candidate = self.viewer.candidates.next()
 
     def load(self, obs_number=0):
         """
@@ -143,8 +160,8 @@ class ImageViewer(object):
         """
         ra = self.candidate.observations[self.obs_number].coordinate.ra
         dec = self.candidate.observations[self.obs_number].coordinate.dec
-        header = self.downloader.get(self.candidate.observations[self.obs_number]).header
-        x, y = WCS(header).all_world2pix(ra, dec, 0)
+        self.header = self.downloader.get(self.candidate.observations[self.obs_number]).header
+        x, y = WCS(self.header).all_world2pix(ra, dec, 0)
         self.canvas.deleteAllObjects()
         self.canvas.add(self.circle(x, y, radius=10, color='red'))
 
@@ -188,18 +205,19 @@ class ImageViewer(object):
         :param viewer: Ginga EnhancedCanvasView object
         """
         logging.debug("Got key: {} from canvas: {} with opn: {} from viewer: ".format(canvas, keyname, opn, viewer))
+
         if keyname == 'f':
             # if/else statements for blinking. Only needs to grab the hdu from the database
             #  once, after that it saves the hdu so it can be quickly loaded into the viewer again.
+            self.keep_position()
             self.obs_number -= 1
+
         elif keyname == 'g':
+            self.keep_position()
             self.obs_number += 1
-        elif keyname == 'z':
-            pass                # soon to be accept/reject shortcuts
-        elif keyname == 'c':
-            self.accept()
+
         else:
-            logging.warning("Unknown keystroke {}".format(keyname))
+            logging.debug("Unknown keystroke {}".format(keyname))  # keystrokes might be for ginga
             return
 
         self.obs_number %= len(self.candidate.observations)
@@ -211,15 +229,27 @@ class ImageViewer(object):
         Calls _mark_aperture to draw a small circle around the celestial object.
         """
         # load the image if not already available, for now we'll put this in here.
-        if self.candidates is None:
+        if self.viewer.candidates is None:
+            logging.debug("No candidates loaded.")
             return
+
+        if self.candidate is None:
+            self.candidate = self.viewer.candidates.next()
+
         self.viewer.clear()
         self.viewer.load_hdu(self.downloader.get(self.candidate.observations[self.obs_number]))
+
+        if (self.pan and self.zoom) is not None:
+            self.set_position()
+
         self._mark_aperture()
         self.viewer.onscreen_message("Loaded: {}".format(self.candidate.observations[self.obs_number].comment.frame),
                                      delay=3)
 
-    def accept(self):
-        logging.warning("Accept keypress")
-        self._write()
-        return
+    def keep_position(self):
+        self.pan = self.viewer.get_pan()
+        self.zoom = self.viewer.get_zoom()
+
+    def set_position(self):
+        self.viewer.set_pan(self.pan[0], self.pan[1])
+        self.viewer.zoom_to(self.zoom)
