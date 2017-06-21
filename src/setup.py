@@ -9,7 +9,9 @@ dependencies = ['requests >= 2.7',
                 'vos >= 2.0',
                 'numpy >= 1.6.1',
                 'Polygon2',
-                'scipy']
+                'scipy',
+                'mp_ephem',
+                'ginga']
 
 
 if sys.version_info[0] > 2:

@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 import unittest
 import mp_ephem
+import hashlib
 from daomop import storage
 from astropy.io import fits
 
@@ -39,6 +40,13 @@ class FitsImageGetTest(unittest.TestCase):
         self.assertIsInstance(storage.FitsImage.from_frame(self.obs.comment.frame).ra_dec_cutout(self.obs.coordinate,
                                                                                                  1.0/60.0),
                               fits.hdu.HDUList)
+
+    def test_MD5Sum(self):
+        m = hashlib.md5()
+        m.update(storage.FitsImage.from_frame(self.obs.comment.frame).ra_dec_cutout(self.obs.coordinate)[1].data)
+
+        # written on 2017/05/31, assumes cutout() and other associated methods work properly
+        self.assertEqual(m.hexdigest(), "69e8f3f49f000ac78ea83db63468095c")
 
 
 if __name__ == '__main__':

@@ -13,7 +13,7 @@ def _create_shell_script(filename):
     """
     Create the shell script that is the processing step.
 
-    :param filename:  name of file to contain the processing shell script.
+    :param filename:  target_name of file to contain the processing shell script.
     :return:
     """
     with open(filename, 'w') as fout:
