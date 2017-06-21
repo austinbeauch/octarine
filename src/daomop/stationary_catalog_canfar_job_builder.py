@@ -5,9 +5,19 @@ import storage
 import sys
 import os
 import stat
+from astropy.time import Time
 
 _COMMAND_FILENAME = "stationary.sh"
 
+CFHT_QRUNS = {
+    '17AQ01': (Time('2017-02-01 22:00:00'), Time('2017-02-02 22:00:00')),
+    '17AQ03': (Time('2017-02-17 22:00:00'), Time('2017-03-02 22:00:00')),
+    '17AQ06': (Time('2017-03-20 22:00:00'), Time('2017-04-03 22:00:00')),
+    '17AQ08': (Time('2017-04-18 22:00:00'), Time('2017-05-03 22:00:00')),
+    '17AQ10': (Time('2017-05-16 22:00:00'), Time('2017-05-30 22:00:00')),
+    '17AQ13': (Time('2017-06-15 22:00:00'), Time('2017-06-27 22:00:00')),
+    '17AQ16': (Time('2017-07-14 22:00:00'), Time('2017-07-31 22:00:00'))
+}
 
 def _create_shell_script(filename):
     """
@@ -48,7 +58,7 @@ Executable = {}
 """.format(command_filename)
 
 
-def main():
+def main(qrun):
     """Build the stationary catalog builder job submission script."""
 
     _create_shell_script(_COMMAND_FILENAME)
@@ -57,7 +67,7 @@ def main():
 
         for healpix in storage.list_healpix():
 
-            params = {"Arguments": healpix,
+            params = {"Arguments": "{} {} {}".format(healpix, CFHT_QRUNS[qrun][0].mjd, CFHT_QRUNS[qrun][1].mjd),
                       "Log": "{}.log".format(healpix),
                       "Output": "{}.out".format(healpix),
                       "Error": "{}.err".format(healpix)
@@ -69,4 +79,4 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(main(sys.argv[1]))

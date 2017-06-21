@@ -1,6 +1,5 @@
 """Mark the stationary sources in a given source catalog by matching with other source catalogs"""
 import sys
-import errno
 import storage
 import util
 from astropy.io import fits
@@ -16,13 +15,15 @@ task = "stationary"
 dependency = None
 
 
-def run(pixel, expnum, ccd, prefix, version, dry_run, force):
+def run(pixel, expnum, ccd, prefix, version, dry_run, force, start_date, end_date):
     """
     Retrieve the catalog from VOSspace, find the matching dataset_name/ccd combos and match against those.
 
     :param pixel: Which HPX Pixel should we build a catalog for.
     :param ccd: chip to retrieve for matching
     :param expnum: exposure number to retrieve for match
+    :param start_date: MJD at start of period to match catalogs in
+    :param end_date: MJD of end of period to match catalogs in
     :param force:
     :param dry_run:
     :param version:
@@ -44,7 +45,7 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force):
             logging.info("Getting fits image from VOSpace")
 
             logging.info("Running match on %s %d" % (expnum, ccd))
-            catalog = match(pixel, expnum, ccd)
+            catalog = match(pixel, expnum, ccd, start_date, end_date)
             split_to_hpx(pixel, catalog)
 
             if dry_run:
@@ -61,17 +62,11 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force):
         storage.set_status(task, prefix, expnum, version, ccd=ccd, status=message)
 
 
-def split_to_hpx(pixel, catalog):
-
-    dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
-    image = storage.FitsImage(catalog.observation, ccd=catalog.ccd, version=catalog.version)
-    catalog.table['dataset_name'] = len(catalog.table)*[dataset_name]
-    catalog.table['mid_mjdate'] = image.header['MJDATE'] + image.header['EXPTIME']/24./3600.0
-    catalog.table['exptime'] = image.header['EXPTIME']
-
+def split_to_hpx(pixel, catalog, catalog_dir=None):
+    dataset_name = catalog.observation.dataset_name
     pix = pixel
     try:
-        healpix_catalog = storage.HPXCatalog(pixel=pix)
+        healpix_catalog = storage.HPXCatalog(pixel=pix, catalog_dir=catalog_dir)
         healpix_catalog.get()
         healpix_catalog.table = healpix_catalog.table[healpix_catalog.table['dataset_name'] != dataset_name]
         healpix_catalog.table = vstack([healpix_catalog.table, catalog.table[catalog.table['HEALPIX'] == pix]])
@@ -84,13 +79,17 @@ def split_to_hpx(pixel, catalog):
     healpix_catalog.put()
 
 
-def match(pixel, expnum, ccd):
+def match(pixel, expnum, ccd, start_date, end_date):
 
     observation = storage.Observation(expnum)
-    image = storage.FitsImage(observation, ccd=ccd)
-    datasec = storage.datasec_to_list(image.header['DATASEC'])
 
     catalog = storage.FitsTable(observation, ccd=ccd, ext='.cat.fits')
+    dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
+    image = storage.FitsImage(catalog.observation, ccd=catalog.ccd, version=catalog.version)
+    catalog.table['dataset_name'] = len(catalog.table)*[dataset_name]
+    catalog.table['mid_mjdate'] = image.header['MJDATE'] + image.header['EXPTIME']/24./3600.0
+    catalog.table['exptime'] = image.header['EXPTIME']
+
     # First match against the HPX catalogs (if they exist)
     ra_dec = SkyCoord(catalog.table['X_WORLD'],
                       catalog.table['Y_WORLD'],
@@ -103,6 +102,7 @@ def match(pixel, expnum, ccd):
     else:
         flux_radius_lim = numpy.median(catalog.table['FLUX_RADIUS'][catalog.table['MAGERR_AUTO'] < 0.002])
 
+    datasec = storage.datasec_to_list(image.header['DATASEC'])
     trim_condition = numpy.all((catalog.table['X_IMAGE'] > datasec[0],
                                 catalog.table['X_IMAGE'] < datasec[1],
                                 catalog.table['Y_IMAGE'] > datasec[2],
@@ -113,7 +113,9 @@ def match(pixel, expnum, ccd):
     catalog.table = catalog.table[trim_condition]
     match_list = image.polygon.cone_search(runids=storage.RUNIDS,
                                            minimum_time=2.0/24.0,
-                                           mjdate=image.header.get('MJDATE', None))
+                                           mjdate=image.header.get('MJDATE', None),
+                                           start_date=start_date,
+                                           end_date=end_date)
 
     # First match against the HPX catalogs (if they exist)
     # reshape the position vectors from the catalogues for use in match_lists
@@ -124,8 +126,9 @@ def match(pixel, expnum, ccd):
     catalog.table['HPXID'] = -1
     healpix = pixel
 
-    hpx_cat = storage.HPXCatalog(pixel=healpix)
+    hpx_cat = storage.HPXCatalog(pixel=healpix, catalog_dir='catalogs_master')
     hpx_cat_len = 0
+
     try:
         hpx_cat.get()
         p2 = numpy.transpose((hpx_cat.table['X_WORLD'],
@@ -140,9 +143,11 @@ def match(pixel, expnum, ccd):
     cond = numpy.all((catalog.table['HPXID'] < 0,
                       catalog.table['HEALPIX'] == healpix), axis=0)
     catalog.table['HPXID'][cond] = [hpx_cat_len + numpy.arange(cond.sum()), ]
-
     catalog.table['MATCHES'] = 0
     catalog.table['OVERLAPS'] = 0
+    # Now append these new source (cond) to the end of the master catalog.
+    split_to_hpx(pixel, catalog, catalog_dir='catalogs_master')
+
     for match_set in match_list:
         logging.info("trying to match against catalog {}p{:02d}.cat.fits".format(match_set[0], match_set[1]))
         try:
@@ -203,6 +208,8 @@ def main():
                         action="store_true")
     parser.add_argument("--debug", "-d",
                         action="store_true")
+    parser.add_argument("start-date", help="MJD of start of darkrun to build HPX catalog for.")
+    parser.add_argument("end-date", help="MJD of end of darkrun to build HPX catalog for.")
 
     cmd_line = " ".join(sys.argv)
     args = parser.parse_args()
@@ -220,7 +227,7 @@ def main():
     for overlap in overlaps:
         expnum = overlap[0]
         ccd = overlap[1]
-        run(args.healpix, expnum, ccd, prefix, version, args.dry_run, args.force)
+        run(args.healpix, expnum, ccd, prefix, version, args.dry_run, args.force, args.start_date, args.end_datae)
     return exit_code
 
 

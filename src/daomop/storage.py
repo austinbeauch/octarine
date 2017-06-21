@@ -182,7 +182,9 @@ class MyPolygon(Polygon.Polygon):
         corners = util.healpix_to_corners(healpix, nside)
         return cls.from_footprint(corners)
 
-    def cone_search(self, runids=None, mjdate=None, minimum_time=None):
+    def cone_search(self, runids=None, mjdate=None, minimum_time=None,
+                    start_date=None,
+                    end_date=None):
 
         query = (" SELECT Observation.observationID as collectionID "
                  " FROM caom2.Observation AS Observation "
@@ -207,6 +209,12 @@ class MyPolygon(Polygon.Polygon):
         if mjdate is not None:
             query += " AND ( Plane.time_bounds_lower < {} ".format(mjdate - minimum_time)
             query += " OR  Plane.time_bounds_upper > {} ) ".format(mjdate + minimum_time)
+
+        if start_date is not None:
+            query += " AND ( Plane.time_bounds_lower > {} ".format(start_date)
+
+        if end_date is not None:
+            query += " AND ( Plane.time_bounds_upper < {} ".format(end_date)
 
         table = tap_query(query)
         overlaps = []
@@ -672,7 +680,9 @@ class FitsImage(FitsArtifact):
 
 class HPXCatalog(FitsTable):
 
-    def __init__(self, pixel, nside=None, **kwargs):
+    def __init__(self, pixel, nside=None, catalog_dir=None, **kwargs):
+        if catalog_dir is None:
+            catalog_dir = CATALOG
         self.pixel = pixel
         kwargs['version'] = kwargs.get('version', '_cat')
         kwargs['ext'] = kwargs.get('ext', '.fits')
@@ -680,7 +690,7 @@ class HPXCatalog(FitsTable):
         if nside is None:
             nside = util.HEALPIX_NSIDE
         self.nside = nside
-        dbimages = os.path.join(os.path.dirname(DBIMAGES), CATALOG)
+        dbimages = os.path.join(os.path.dirname(DBIMAGES), catalog_dir)
         super(HPXCatalog, self).__init__(Observation(self.dataset_name, dbimages=dbimages), **kwargs)
 
     @property
