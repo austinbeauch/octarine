@@ -1,5 +1,5 @@
 import logging
-from math import atan2, pi
+from math import atan2, degrees
 
 import candidate
 from ginga.web.pgw import ipg, Widgets, Viewers
@@ -12,6 +12,10 @@ logging.basicConfig(level=logging.INFO)
 class ValidateGui(ipg.EnhancedCanvasView):
 
     def build_gui(self, container):
+        """
+        Building the GUI to be displayed in an HTML5 canvas. Tested and working on Firefox.
+        :param container: ginga.web.pgw.Widgets.TopLevel object
+        """
         self.candidates = None
 
         vbox = Widgets.VBox()
@@ -28,8 +32,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         self.set_callback('cursor-changed', self.motion_cb)
 
-        self.load_candidates = Widgets.TextEntry()
-        self.load_candidates.add_callback('activated', lambda x: self.load_candiates(x))
+        load_candidates = Widgets.TextEntry()
+        load_candidates.add_callback('activated', lambda x: self.load_candiates(x))
 
         accept = Widgets.Button("Accept")
         accept.add_callback('activated', lambda x: self.onscreen_message("Accept", 1))
@@ -49,7 +53,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         h2box.add_widget(wclear, stretch=0)
         h2box.set_spacing(5)
         h2box.set_margins(0, 0, 25, 0)
-        h3box.add_widget(self.load_candidates, stretch=1)
+        h3box.add_widget(load_candidates, stretch=1)
 
         vbox.add_widget(h2box, stretch=1)
         vbox.add_widget(h3box, stretch=1)
@@ -67,6 +71,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         logging.info("Accepted candidate entry: {}".format(event.text))
         self.candidates = candidate.CandidateSet(int(event.text))
+
 
 class WebServerFactory(object):
     """
@@ -138,7 +143,7 @@ class ImageViewer(object):
         self.pan = None
         self.zoom = None
 
-    def _write(self):
+    def write_record(self):
 
         with open(self.candidate.observations[0].provisional_name+".ast", 'w+') as fobj:
             for ob in self.candidate.observations:
@@ -154,6 +159,14 @@ class ImageViewer(object):
         self.obs_number = obs_number
         self._load()
 
+    @property
+    def loaded_hdu(self):
+        return self.downloader.get(self.candidate.observations[self.obs_number])
+
+    @property
+    def header(self):
+        return self.loaded_hdu.header
+
     def _mark_aperture(self):
         """
         Draws a red circle on the drawing canvas in the viewing window around the celestial object
@@ -161,7 +174,6 @@ class ImageViewer(object):
         """
         ra = self.candidate.observations[self.obs_number].coordinate.ra
         dec = self.candidate.observations[self.obs_number].coordinate.dec
-        self.header = self.downloader.get(self.candidate.observations[self.obs_number]).header
         x, y = WCS(self.header).all_world2pix(ra, dec, 0)
         self.canvas.deleteAllObjects()
         self.canvas.add(self.circle(x, y, radius=10, color='red'))
@@ -259,37 +271,47 @@ class ImageViewer(object):
         """
         Sets the current image's pan and zoom to what was saved from get_position
         """
-        self.viewer.set_pan(self.pan[0], self.pan[1])
+        # self.viewer.set_pan(self.pan[0], self.pan[1]) TODO: make pans relative depending on orientation
         self.viewer.zoom_to(self.zoom)
 
     def accept(self):
         logging.info("Accept keypress")
-        self._write()
+        self.write_record()
         return
 
     def _rotate(self):
         wcs = WCS(self.header)
-        x = wcs.all_pix2world([[0, 1], [1, 0]], 0)
-        print x
-
+        self.viewer.transform(False, False, False)
+        x = wcs.all_pix2world([[0, 0], [1, 1], [1, 0]], 0)
         ra1 = x[0][0]
         ra2 = x[1][0]
+        ra3 = x[2][0]
         dec1 = x[0][1]
         dec2 = x[1][1]
-        print ra1, ra2, dec1, dec2
+        dec3 = x[2][1]
 
-        delta_x = ra1 - ra2
+        # phi = acos((ra2-ra1)/((ra2-ra1)**2+(dec2-dec1)**2)**0.5)
+
+        delta_x = ra2 - ra1
         delta_y = dec2 - dec1
-        print delta_x, delta_y
 
+        flip_x = 1
+        flip_y = 1
         if not delta_x < 0:
-            self.viewer.transform(True, False, False)  # def transform(self, flip_x, flip_y, swap_xy):
-
-        if not delta_y > 0:
+            flip_x = -1
+            if not delta_y > 0:
+                flip_y = -1
+                self.viewer.transform(True, True, False)  # def transform(self, flip_x, flip_y, swap_xy):
+            else:
+                self.viewer.transform(True, False, False)
+        elif not delta_y > 0:
+            flip_y = -1
             self.viewer.transform(False, True, False)
 
-        theta = atan2(delta_y, delta_x)
-        print theta
-        theta = theta * 180 / pi
-        print theta
-        self.viewer.rotate(theta-180)
+        delta_delta = (dec3 - dec1) * flip_y
+        delta_ra = (ra3 - ra1) * flip_x * -1
+
+        theta = degrees(atan2(delta_delta, delta_ra))
+
+        self.viewer.rotate(theta)
+
