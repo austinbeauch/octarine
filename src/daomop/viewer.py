@@ -1,5 +1,5 @@
 import logging
-from math import atan2
+from math import atan2, pi
 
 import candidate
 from ginga.web.pgw import ipg, Widgets, Viewers
@@ -28,8 +28,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         self.set_callback('cursor-changed', self.motion_cb)
 
-        load_candidates = Widgets.TextEntry()
-        load_candidates.add_callback('activated', lambda x: self.load_candiates(x))
+        self.load_candidates = Widgets.TextEntry()
+        self.load_candidates.add_callback('activated', lambda x: self.load_candiates(x))
 
         accept = Widgets.Button("Accept")
         accept.add_callback('activated', lambda x: self.onscreen_message("Accept", 1))
@@ -49,7 +49,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         h2box.add_widget(wclear, stretch=0)
         h2box.set_spacing(5)
         h2box.set_margins(0, 0, 25, 0)
-        h3box.add_widget(load_candidates, stretch=1)
+        h3box.add_widget(self.load_candidates, stretch=1)
 
         vbox.add_widget(h2box, stretch=1)
         vbox.add_widget(h3box, stretch=1)
@@ -63,9 +63,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
     def load_candiates(self, event):
         # print(dir(event))
+        self.onscreen_message("Entered: {}".format(event.text), 1)
+
         logging.info("Accepted candidate entry: {}".format(event.text))
         self.candidates = candidate.CandidateSet(int(event.text))
-
 
 class WebServerFactory(object):
     """
@@ -209,11 +210,11 @@ class ImageViewer(object):
         if keyname == 'f':
             # if/else statements for blinking. Only needs to grab the hdu from the database
             #  once, after that it saves the hdu so it can be quickly loaded into the viewer again.
-            self.keep_position()
+            self.get_position()
             self.obs_number -= 1
 
         elif keyname == 'g':
-            self.keep_position()
+            self.get_position()
             self.obs_number += 1
 
         else:
@@ -243,13 +244,52 @@ class ImageViewer(object):
             self.set_position()
 
         self._mark_aperture()
+        self._rotate()
         self.viewer.onscreen_message("Loaded: {}".format(self.candidate.observations[self.obs_number].comment.frame),
                                      delay=3)
 
-    def keep_position(self):
+    def get_position(self):
+        """
+        Stores the current image's pan location and zoom amount
+        """
         self.pan = self.viewer.get_pan()
         self.zoom = self.viewer.get_zoom()
 
     def set_position(self):
+        """
+        Sets the current image's pan and zoom to what was saved from get_position
+        """
         self.viewer.set_pan(self.pan[0], self.pan[1])
         self.viewer.zoom_to(self.zoom)
+
+    def accept(self):
+        logging.info("Accept keypress")
+        self._write()
+        return
+
+    def _rotate(self):
+        wcs = WCS(self.header)
+        x = wcs.all_pix2world([[0, 1], [1, 0]], 0)
+        print x
+
+        ra1 = x[0][0]
+        ra2 = x[1][0]
+        dec1 = x[0][1]
+        dec2 = x[1][1]
+        print ra1, ra2, dec1, dec2
+
+        delta_x = ra1 - ra2
+        delta_y = dec2 - dec1
+        print delta_x, delta_y
+
+        if not delta_x < 0:
+            self.viewer.transform(True, False, False)  # def transform(self, flip_x, flip_y, swap_xy):
+
+        if not delta_y > 0:
+            self.viewer.transform(False, True, False)
+
+        theta = atan2(delta_y, delta_x)
+        print theta
+        theta = theta * 180 / pi
+        print theta
+        self.viewer.rotate(theta-180)
