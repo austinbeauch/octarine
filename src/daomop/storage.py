@@ -13,6 +13,7 @@ from astropy import units
 from astropy.table import Table
 from astropy.io import fits, ascii
 from astropy.time import Time
+from cadcutils.exceptions import BadRequestException, AlreadyExistsException
 
 import util
 import vospace
@@ -550,7 +551,13 @@ class FitsImage(FitsArtifact):
         :return:
         """
         fpt = tempfile.NamedTemporaryFile(suffix='.fits')
-        copy(self.uri + cutout, fpt.name)
+        try:
+            copy(self.uri + cutout, fpt.name)
+        except BadRequestException as bre:
+            if "No matching data" in str(bre):
+                logging.error(str(bre))
+                return []
+
         fpt.seek(0)
         hdu_list = fits.open(fpt, scale_back=False)
         hdu_list.verify('silentfix+ignore')
@@ -983,7 +990,10 @@ def delete(uri):
 
 def make_link(source, destination):
     logging.debug("Linking {} to {}".format(source, destination))
-    return vospace.client.link(source, destination)
+    try:
+       return vospace.client.link(source, destination)
+    except AlreadyExistsException as aee:
+       return True
 
 
 def listdir(directory, force=False):
