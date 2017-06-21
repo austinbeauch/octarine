@@ -22,7 +22,7 @@ class NoAvailableWorkException(Exception):
 
 
 class SourceNotNamedException(Exception):
-    """The source has no name."""
+    """The source has no target_name."""
 
     def __init__(self, source):
         self.source = source

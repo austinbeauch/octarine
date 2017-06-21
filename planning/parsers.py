@@ -137,7 +137,7 @@ def ossos_release_with_metadata():
         discoveries.append(tno)
 
     # for obj in discoveries:
-    # observation = [n for n in observations if n.observations[-1].provisional_name == obj.name][0]
+    # observation = [n for n in observations if n.observations[-1].provisional_name == obj.target_name][0]
     # for obs in observation.observations:
     # if obs.discovery.is_discovery:
     #             if obj.mag is not None:
@@ -243,7 +243,7 @@ def synthetic_model_kbos(at_date=parameters.NEWMOONS[parameters.DISCOVERY_NEW_MO
 def output_discoveries_for_animation():
     discoveries = ossos_release_with_metadata()
     with open('/Users/michele/Desktop/OSSOSdiscoveries.txt', 'w') as outfile:
-        outfile.write('name a e i node peri MA epoch H date_of_discovery\n')
+        outfile.write('target_name a e i node peri MA epoch H date_of_discovery\n')
         for obj in discoveries:
             # a e i node peri MA epoch H date_of_discovery
             outfile.write(
@@ -392,7 +392,7 @@ def release_to_latex(outfile):
     characterised = tnos[numpy.array([name.startswith("o") for name in tnos['object']])]
     create_table(characterised, outfile, initial_id='o3')
 
-    # uncharacterised = tnos[numpy.array([name.startswith("u") for name in tnos['object']])]
+    # uncharacterised = tnos[numpy.array([target_name.startswith("u") for target_name in tnos['object']])]
     # create_table(uncharacterised, 'u_' + outfile)
 
     return

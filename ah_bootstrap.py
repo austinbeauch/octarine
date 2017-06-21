@@ -265,7 +265,7 @@ class _Bootstrapper(object):
         # For now we just pop recognized ah_bootstrap options out of the
         # arg list.  This is imperfect; in the unlikely case that a setup.py
         # custom command or even custom Distribution class defines an argument
-        # of the same name then we will break that.  However there's a catch22
+        # of the same target_name then we will break that.  However there's a catch22
         # here that we can't just do full argument parsing right here, because
         # we don't yet know *how* to parse all possible command-line arguments.
         if '--no-git' in argv:

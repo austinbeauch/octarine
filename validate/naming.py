@@ -8,7 +8,7 @@ __author__ = "David Rusk <drusk@uvic.ca>"
 
 def _generate_provisional_name(q, astrom_header, fits_header):
     """
-    Generates a name for an object given the information in its astrom
+    Generates a target_name for an object given the information in its astrom
     observation header and FITS header.
     :param q: a queue of provisional names to return.
     :type q: Queue
@@ -76,7 +76,7 @@ class ProvisionalNameGenerator(object):
 
 class DryRunNameGenerator(ProvisionalNameGenerator):
     """
-    Generate a fake name for dry runs so we don't increment counters.
+    Generate a fake target_name for dry runs so we don't increment counters.
     """
     def generate_name(self, astrom_header, fits_header):
         epoch_field = get_epoch_field(astrom_header, fits_header)

@@ -28,5 +28,5 @@ if __name__ == "__main__":
 
     program_configuration.observing_blocks.append(ob)
     program_configuration.observing_groups.append(og)
-    program_configuration.targets.append(target)
+    program_configuration.mjdates.append(target)
     print(program.to_json())

@@ -332,7 +332,7 @@ class SourceCutout(object):
 
         Returns:
           filename: str
-            The name of the file containing the FITS data.
+            The target_name of the file containing the FITS data.
         """
         if self._tempfile is None:
             self._tempfile = tempfile.NamedTemporaryFile(
