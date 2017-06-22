@@ -13,6 +13,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
     def build_gui(self, container):
         self.candidates = None
+        self.load = None
 
         vbox = Widgets.VBox()
         vbox.set_border_width(2)
@@ -67,6 +68,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         logging.info("Accepted candidate entry: {}".format(event.text))
         self.candidates = candidate.CandidateSet(int(event.text))
+        if self.load is not None:
+            self.load()
 
 class WebServerFactory(object):
     """
@@ -119,6 +122,7 @@ class ImageViewer(object):
         self.viewer.enable_autocuts('on')
         self.viewer.set_autocut_params('zscale')
         self.viewer.open()
+        self.viewer.load = self.load
 
         self.downloader = downloader
 
