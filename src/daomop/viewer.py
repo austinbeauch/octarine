@@ -13,7 +13,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
     def build_gui(self, container):
         """
-        Building the GUI to be displayed in an HTML5 canvas. Tested and working on Firefox.
+        Building the GUI to be displayed in an HTML5 canvas. Currently consists of three buttons and a text box.
+        Tested and working in Mozilla Firefox web browser.
         :param container: ginga.web.pgw.Widgets.TopLevel object
         """
         self.candidates = None
@@ -161,10 +162,16 @@ class ImageViewer(object):
 
     @property
     def loaded_hdu(self):
+        """
+        Return current HDU
+        """
         return self.downloader.get(self.candidate.observations[self.obs_number])
 
     @property
     def header(self):
+        """
+        Return current HDU's header
+        """
         return self.loaded_hdu.header
 
     def _mark_aperture(self):
@@ -280,6 +287,11 @@ class ImageViewer(object):
         return
 
     def _rotate(self):
+        """
+        Rotates the current viewer image to be oriented North up East left. This is done by taking vectors from the
+         origin and using their WCS values to determine the original orientation of the image. Images are then flipped/
+         rotated accordingly to be North up East left.
+        """
         wcs = WCS(self.header)
         self.viewer.transform(False, False, False)
         x = wcs.all_pix2world([[0, 0], [1, 1], [1, 0]], 0)
@@ -315,3 +327,10 @@ class ImageViewer(object):
 
         self.viewer.rotate(theta)
 
+    def _align(self):
+        """
+        Using first image as a reference point, define a center ra/dec location and pan other image to center
+         over said reference point so blinking images will have centered backgrounds.
+        If the pan were to cause a shift greater than half of the viewing window: do not pan.
+        """
+        pass
