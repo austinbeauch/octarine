@@ -19,6 +19,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         self.candidates = None
         self.load = None
+        self.write_record = None
 
         vbox = Widgets.VBox()
         vbox.set_border_width(2)
@@ -38,7 +39,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         load_candidates.add_callback('activated', lambda x: self.load_candiates(x))
 
         accept = Widgets.Button("Accept")
-        accept.add_callback('activated', lambda x: self.onscreen_message("Accept", 1))
+        accept.add_callback('activated', lambda x: self.accept())
 
         reject = Widgets.Button("Reject")
         reject.add_callback('activated', lambda x: self.onscreen_message("Reject", 1))
@@ -67,11 +68,16 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         container.set_widget(hbox)
 
+    def accept(self):
+        self.onscreen_message("Accepted", 1)
+        if self.write_record is not None:
+            self.write_record()
+
     def load_candiates(self, event):
         # print(dir(event))
         self.onscreen_message("Entered: {}".format(event.text), 1)
-
         logging.info("Accepted candidate entry: {}".format(event.text))
+
         self.candidates = candidate.CandidateSet(int(event.text))
         if self.load is not None:
             self.load()
@@ -129,7 +135,7 @@ class ImageViewer(object):
         self.viewer.set_autocut_params('zscale')
         self.viewer.open()
         self.viewer.load = self.load
-
+        self.viewer.write_record = self.write_record
         self.downloader = downloader
 
         # creating drawing canvas; initializing polygon types
@@ -149,10 +155,14 @@ class ImageViewer(object):
         self.zoom = None
 
     def write_record(self):
-
-        with open(self.candidate.observations[0].provisional_name+".ast", 'w+') as fobj:
-            for ob in self.candidate.observations:
-                fobj.write(ob.to_string())
+        try:
+            with open(self.candidate.observations[0].provisional_name+".ast", 'w+') as fobj:
+                for ob in self.candidate.observations:
+                    fobj.write(ob.to_string())
+            logging.info("Written to file {}".format(self.candidate.observations[0].provisional_name+".ast"))
+        except IOError as ex:
+            logging.error("Unable to write to file.")
+            raise ex
         self.candidate = self.viewer.candidates.next()
 
     def load(self, obs_number=0):
