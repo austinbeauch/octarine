@@ -7,6 +7,7 @@ from astropy.wcs import WCS
 
 dbimages = "vos:jkavelaars/TNORecon/dbimages"
 logging.basicConfig(level=logging.INFO)
+DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
 
 
 class ValidateGui(ipg.EnhancedCanvasView):
@@ -18,9 +19,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :param container: ginga.web.pgw.Widgets.TopLevel object
         """
         self.candidates = None
-        self.load = None
-        self.write_record = None
-        self.skip = None
+        self.image_viewer = None
         self.pixel_base = 1.0
         self.readout = Widgets.Label("")
 
@@ -47,7 +46,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         reject.add_callback('activated', lambda x: self.reject())
 
         wclear = Widgets.Button("Skip")
-        wclear.add_callback('activated', lambda x: self.jump())
+        wclear.add_callback('activated', lambda x: self.next())
 
         hbox = Widgets.HBox()
         h2box = Widgets.HBox()
@@ -65,36 +64,37 @@ class ValidateGui(ipg.EnhancedCanvasView):
         hbox.add_widget(self.top_box)
         container.set_widget(hbox)
 
-    def jump(self):
+    def next(self):
         """
         Load the next set of images into the viewer
         """
         # Still not working to call candidates.next() internally
         # if self.candidates is not None:
         #     self.candidates.next()
-        #     self.top_box.append_text(self.load().__str__())
+        #     self.load()
+            # self.top_box.append_text(self.load().__str__())
 
-        if self.skip is not None:
-            self.skip()
-            self.top_box.set_text(self.load().__str__())
+        if self.image_viewer is not None:
+            self.image_viewer.candidate = self.candidates.next()
+            self.load()
 
     def reject(self):
         """
         Reject current observation. Write to file and load next set into the viewer
         """
         logging.info("Rejected")
-        if self.write_record is not None:
-            self.write_record(rejected=True)
-            self.jump()
+        if self.image_viewer is not None:
+            self.image_viewer.write_record(rejected=True)
+            self.next()
 
     def accept(self):
         """
         Accept current observation. Write to file and load next set into the viewer
         """
         logging.info("Accepted")
-        if self.write_record is not None:
-            self.write_record()
-            self.jump()
+        if self.image_viewer is not None:
+            self.image_viewer.write_record()
+            self.next()
 
     def load_candidates(self, event):
         """
@@ -105,8 +105,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
         logging.info("Accepted candidate entry: {}".format(event.text))
         self.candidates = candidate.CandidateSet(int(event.text))
 
-        if self.load is not None:
-            self.top_box.set_text(self.load().__str__())
+        if self.image_viewer is not None:
+            self.load()
+
+    def load(self):
+        self.image_viewer.load()
+        print "setting"
+        self.top_box.set_text(self.image_viewer.info)
 
 
 class WebServerFactory(object):
@@ -161,10 +166,7 @@ class ImageViewer(object):
         self.viewer.set_autocut_params('zscale')
         self.viewer.open()
 
-        self.viewer.load = self.load
-        self.viewer.write_record = self.write_record
-        self.viewer.skip = self.skip
-
+        self.viewer.image_viewer = self
         self.downloader = downloader
 
         # creating drawing canvas; initializing polygon types
@@ -210,11 +212,9 @@ class ImageViewer(object):
         """
         self._center = None
         self.obs_number = obs_number
-        x = self._load()
+        self._load()
         self._center = WCS(self.header).all_pix2world(self.viewer.get_data_size()[0] / 2,
                                                       self.viewer.get_data_size()[1] / 2, 0)
-
-        return x
 
     def _load(self):
         """
@@ -233,7 +233,14 @@ class ImageViewer(object):
 
         self.viewer.clear()
         # x = self.candidate.observations[self.obs_number]
-        self.viewer.load_hdu(self.downloader.get(self.candidate.observations[self.obs_number]))
+        while True:
+            try:
+                self.viewer.load_hdu(self.downloader.get(self.candidate.observations[self.obs_number]))
+                break
+
+            except Exception:
+                logging.warning("Skipping candidate {} due to load failure".format(self.candidate))
+                self.candidate = self.viewer.candidates.next()
 
         if self.zoom is not None:
             self.set_zoom()
@@ -246,7 +253,10 @@ class ImageViewer(object):
 
         self.viewer.onscreen_message("Loaded: {}".format(self.candidate.observations[self.obs_number].comment.frame),
                                      delay=1)
-        return self.header
+
+    @property
+    def info(self):
+        return "\n".join([x + " = " + str(self.header.get(x, "UNKNOWN")) for x in DISPLAY_KEYWORDS])
 
     def _mark_aperture(self):
         """
@@ -371,7 +381,7 @@ class ImageViewer(object):
             return
 
         self.obs_number %= len(self.candidate.observations)
-        self._load()
+        self.viewer.load()
 
     @property
     def center(self):
