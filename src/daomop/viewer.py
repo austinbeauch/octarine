@@ -21,6 +21,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.load = None
         self.write_record = None
         self.skip = None
+        self.pixel_base = 1.0
+        self.readout = Widgets.Label("")
 
         vbox = Widgets.VBox()
         vbox.set_border_width(2)
@@ -29,15 +31,14 @@ class ValidateGui(ipg.EnhancedCanvasView):
         w = Viewers.GingaViewerWidget(viewer=self)
         vbox.add_widget(w, stretch=1)
 
-        self.pixel_base = 1.0
-        self.readout = Widgets.Label("")
-
         vbox.add_widget(self.readout, stretch=0)
 
         self.set_callback('cursor-changed', self.motion_cb)
 
+        self.top_box = Widgets.TextArea(wrap=True, editable=True)
+
         load_candidates = Widgets.TextEntry()
-        load_candidates.add_callback('activated', lambda x: self.load_candiates(x))
+        load_candidates.add_callback('activated', lambda x: self.load_candidates(x))
 
         accept = Widgets.Button("Accept")
         accept.add_callback('activated', lambda x: self.accept())
@@ -50,53 +51,62 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         hbox = Widgets.HBox()
         h2box = Widgets.HBox()
-        h3box = Widgets.HBox()
-
         h2box.add_widget(accept, stretch=0)
         h2box.add_widget(reject, stretch=0)
         h2box.add_widget(wclear, stretch=0)
-        h2box.set_spacing(5)
-        h2box.set_margins(0, 0, 25, 0)
-        h3box.add_widget(load_candidates, stretch=1)
-
+        h2box.add_widget(load_candidates, stretch=1)
+        h2box.set_spacing(7)
         vbox.add_widget(h2box, stretch=1)
-        vbox.add_widget(h3box, stretch=1)
 
         # need to put this in an hbox with an expanding label or the
         # browser wants to resize the canvas, distorting it
         hbox.add_widget(vbox, stretch=0)
         hbox.add_widget(Widgets.Label(''), stretch=1)
-
+        hbox.add_widget(self.top_box)
         container.set_widget(hbox)
 
     def jump(self):
-        self.onscreen_message("Skipping", 1)
-
-        # this didn't work for whatever reason
-        # self.candidates.next()
-        # if self.load is not None:
-        #     self.load()
+        """
+        Load the next set of images into the viewer
+        """
+        # Still not working to call candidates.next() internally
+        # if self.candidates is not None:
+        #     self.candidates.next()
+        #     self.top_box.append_text(self.load().__str__())
 
         if self.skip is not None:
             self.skip()
+            self.top_box.set_text(self.load().__str__())
 
     def reject(self):
-        self.onscreen_message("Rejected", delay=1)
+        """
+        Reject current observation. Write to file and load next set into the viewer
+        """
+        logging.info("Rejected")
         if self.write_record is not None:
             self.write_record(rejected=True)
+            self.jump()
 
     def accept(self):
-        self.onscreen_message("Accepted", delay=1)
+        """
+        Accept current observation. Write to file and load next set into the viewer
+        """
+        logging.info("Accepted")
         if self.write_record is not None:
             self.write_record()
+            self.jump()
 
-    def load_candiates(self, event):
-        self.onscreen_message("Entered: {}".format(event.text), 1)
+    def load_candidates(self, event):
+        """
+        Initial candidates loaded into the viewer
+
+        :param event: Catalogue number containing dataset
+        """
         logging.info("Accepted candidate entry: {}".format(event.text))
-
         self.candidates = candidate.CandidateSet(int(event.text))
+
         if self.load is not None:
-            self.load()
+            self.top_box.set_text(self.load().__str__())
 
 
 class WebServerFactory(object):
@@ -167,7 +177,6 @@ class ImageViewer(object):
 
         self.obs_number = 0
         self.candidate = None
-        self.pan = None
         self.zoom = None
         self._center = None
 
@@ -182,7 +191,6 @@ class ImageViewer(object):
         except IOError as ex:
             logging.error("Unable to write to file.")
             raise ex
-        self.skip()
 
     def skip(self):
         """
@@ -196,22 +204,26 @@ class ImageViewer(object):
         """
         With the viewing window already created, Creates a FitsImage object and loads its cutout into the window.
         Define the center of the first image to be the reference point for aligning the other two images.
+
         :param obs_number: index of which line in the file gets loaded/displayed in the viewer
+        :return Header of the loaded image
         """
         self._center = None
         self.obs_number = obs_number
-        self._load()
+        x = self._load()
         self._center = WCS(self.header).all_pix2world(self.viewer.get_data_size()[0] / 2,
                                                       self.viewer.get_data_size()[1] / 2, 0)
 
+        return x
+
     def _load(self):
         """
+        Loads an image into the viewer.
         Checks if an HDU has been loaded already and retrieves if needed and then displays that HDU.
-        Calls _mark_aperture to draw a small circle around the celestial object.
-        Calls _rotate to orient the image North up East left
+
+        :return Header of the loaded image
         """
         # load the image if not already available, for now we'll put this in here.
-        print self.obs_number
         if self.viewer.candidates is None:
             logging.debug("No candidates loaded.")
             return
@@ -220,10 +232,11 @@ class ImageViewer(object):
             self.candidate = self.viewer.candidates.next()
 
         self.viewer.clear()
+        # x = self.candidate.observations[self.obs_number]
         self.viewer.load_hdu(self.downloader.get(self.candidate.observations[self.obs_number]))
 
-        if (self.pan and self.zoom) is not None:
-            self.set_position()
+        if self.zoom is not None:
+            self.set_zoom()
 
         self._mark_aperture()
         self._rotate()
@@ -233,11 +246,11 @@ class ImageViewer(object):
 
         self.viewer.onscreen_message("Loaded: {}".format(self.candidate.observations[self.obs_number].comment.frame),
                                      delay=1)
+        return self.header
 
     def _mark_aperture(self):
         """
-        Draws a red circle on the drawing canvas in the viewing window around the celestial object
-         being observed.
+        Draws a red circle on the drawing canvas in the viewing window around the celestial object detected.
         """
         ra = self.candidate.observations[self.obs_number].coordinate.ra
         dec = self.candidate.observations[self.obs_number].coordinate.dec
@@ -280,7 +293,7 @@ class ImageViewer(object):
             self.viewer.transform(False, True, False)
 
         delta_delta = (dec3 - dec1) * flip_y
-        delta_ra = (ra3 - ra1) * flip_x * -1
+        delta_ra = (ra1 - ra3) * flip_x
 
         theta = degrees(atan2(delta_delta, delta_ra))
 
@@ -346,13 +359,11 @@ class ImageViewer(object):
         logging.debug("Got key: {} from canvas: {} with opn: {} from viewer: ".format(canvas, keyname, opn, viewer))
 
         if keyname == 'f':
-            # if/else statements for blinking. Only needs to grab the hdu from the database
-            #  once, after that it saves the hdu so it can be quickly loaded into the viewer again.
-            self.get_position()
+            self.get_zoom()
             self.obs_number -= 1
 
         elif keyname == 'g':
-            self.get_position()
+            self.get_zoom()
             self.obs_number += 1
 
         else:
@@ -384,16 +395,14 @@ class ImageViewer(object):
         """
         return self.loaded_hdu.header
 
-    def get_position(self):
+    def get_zoom(self):
         """
-        Stores the current image's pan location and zoom amount
+        Stores the current image's zoom amount
         """
-        self.pan = self.viewer.get_pan()
         self.zoom = self.viewer.get_zoom()
 
-    def set_position(self):
+    def set_zoom(self):
         """
-        Sets the current image's pan and zoom to what was saved from get_position
+        Sets the current image's zoom to what was saved from get_zoom
         """
-        # self.viewer.set_pan(self.pan[0], self.pan[1]) TODO: make pans relative depending on orientation
         self.viewer.zoom_to(self.zoom)
