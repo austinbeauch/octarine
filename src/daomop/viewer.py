@@ -1,13 +1,117 @@
-from ginga.web.pgw import ipg, Widgets, Viewers
-from astropy.wcs import WCS
 import logging
+from math import atan2, degrees
 
 import candidate
+from ginga.web.pgw import ipg, Widgets, Viewers
+from astropy.wcs import WCS
 
 dbimages = "vos:jkavelaars/TNORecon/dbimages"
 logging.basicConfig(level=logging.INFO)
+DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
 
 
+class ValidateGui(ipg.EnhancedCanvasView):
+
+    def build_gui(self, container):
+        """
+        Building the GUI to be displayed in an HTML5 canvas. Currently consists of three buttons and a text box.
+        Tested and working in Mozilla Firefox web browser.
+        :param container: ginga.web.pgw.Widgets.TopLevel object
+        """
+        self.candidates = None
+        self.image_viewer = None
+        self.pixel_base = 1.0
+        self.readout = Widgets.Label("")
+
+        vbox = Widgets.VBox()
+        vbox.set_border_width(2)
+        vbox.set_spacing(1)
+
+        w = Viewers.GingaViewerWidget(viewer=self)
+        vbox.add_widget(w, stretch=1)
+
+        vbox.add_widget(self.readout, stretch=0)
+
+        self.set_callback('cursor-changed', self.motion_cb)
+
+        self.top_box = Widgets.TextArea(wrap=True, editable=True)
+
+        load_candidates = Widgets.TextEntry()
+        load_candidates.add_callback('activated', lambda x: self.load_candidates(x))
+
+        accept = Widgets.Button("Accept")
+        accept.add_callback('activated', lambda x: self.accept())
+
+        reject = Widgets.Button("Reject")
+        reject.add_callback('activated', lambda x: self.reject())
+
+        wclear = Widgets.Button("Skip")
+        wclear.add_callback('activated', lambda x: self.next())
+
+        hbox = Widgets.HBox()
+        h2box = Widgets.HBox()
+        h2box.add_widget(accept, stretch=0)
+        h2box.add_widget(reject, stretch=0)
+        h2box.add_widget(wclear, stretch=0)
+        h2box.add_widget(load_candidates, stretch=1)
+        h2box.set_spacing(7)
+        vbox.add_widget(h2box, stretch=1)
+
+        # need to put this in an hbox with an expanding label or the
+        # browser wants to resize the canvas, distorting it
+        hbox.add_widget(vbox, stretch=0)
+        hbox.add_widget(Widgets.Label(''), stretch=1)
+        hbox.add_widget(self.top_box)
+        container.set_widget(hbox)
+
+    def next(self):
+        """
+        Load the next set of images into the viewer
+        """
+        # Still not working to call candidates.next() internally
+        # if self.candidates is not None:
+        #     self.candidates.next()
+        #     self.load()
+            # self.top_box.append_text(self.load().__str__())
+
+        if self.image_viewer is not None:
+            self.image_viewer.candidate = self.candidates.next()
+            self.load()
+
+    def reject(self):
+        """
+        Reject current observation. Write to file and load next set into the viewer
+        """
+        logging.info("Rejected")
+        if self.image_viewer is not None:
+            self.image_viewer.write_record(rejected=True)
+            self.next()
+
+    def accept(self):
+        """
+        Accept current observation. Write to file and load next set into the viewer
+        """
+        logging.info("Accepted")
+        if self.image_viewer is not None:
+            self.image_viewer.write_record()
+            self.next()
+
+    def load_candidates(self, event):
+        """
+        Initial candidates loaded into the viewer
+
+        :param event: Catalogue number containing dataset
+        """
+        logging.info("Accepted candidate entry: {}".format(event.text))
+        self.candidates = candidate.CandidateSet(int(event.text))
+
+        if self.image_viewer is not None:
+            self.load()
+
+    def load(self):
+        self.image_viewer.load()
+        print "setting"
+        self.top_box.set_text(self.image_viewer.info)
 
 
 class WebServerFactory(object):
@@ -36,55 +140,9 @@ class WebServerFactory(object):
         self.web_server.stop()
 
 
-class ValidateGui(ipg.EnhancedCanvasView):
-
-    def build_gui(self, container):
-        self.candidates = None
-        vbox = Widgets.VBox()
-        vbox.set_border_width(2)
-        vbox.set_spacing(1)
-
-        w = Viewers.GingaViewerWidget(viewer=self)
-        vbox.add_widget(w, stretch=1)
-
-        vbox.add_widget(self.readout, stretch=0)
-
-        load_candidates = Widgets.TextEntry()
-        load_candidates.add_callback('load_candidates', lambda  x: self.load_candiates(x))
-        self.add_callback()
-
-        # self.set_callback('none-move', self.motion_cb)
-        self.set_callback('cursor-changed', self.motion_cb)
-        accept = Widgets.Button("Accept")
-        accept.add_callback('activated', lambda x: self.onscreen_message("Accept", 1))
-
-        reject = Widgets.Button("Reject")
-        reject.add_callback('activated', lambda x: self.onscreen_message("Reject", 1))
-
-        wclear = Widgets.Button("Clear")
-        wclear.add_callback('activated', lambda x: self.clear())
-
-        vbox.add_widget(accept, stretch=1)
-        vbox.add_widget(reject, stretch=1)
-        vbox.add_widget(wclear, stretch=1)
-        vbox.add_widget(load_candidates, stretch=1)
-
-        # need to put this in an hbox with an expanding label or the
-        # browser wants to resize the canvas, distorting it
-        hbox = Widgets.HBox()
-        hbox.add_widget(vbox, stretch=0)
-        hbox.add_widget(Widgets.Label(''), stretch=1)
-
-        container.set_widget(hbox)
-
-    def load_candiates(self, event):
-        print(event)
-        self.candidates = candidate.CandidateSet(event.text)
-
-
 class ImageViewer(object):
 
-    def __init__(self, gui, downloader, *args, **kwargs):
+    def __init__(self, downloader, *args, **kwargs):
         """
         Initialization of a local, web-client based server for displaying images. The viewer should automatically pop
          up in a new tab.
@@ -98,13 +156,19 @@ class ImageViewer(object):
         self.readout = Widgets.Label("")
 
         # standard setup commands; creating viewing window
-        self.viewer = gui
+        self.web_server = ipg.make_server(host="localhost",
+                                          port=9914,
+                                          use_opencv=False,
+                                          viewer_class=ValidateGui)
+        self.web_server.start(no_ioloop=True)
+        self.viewer = self.web_server.get_viewer("ID")
         self.viewer.enable_autocuts('on')
         self.viewer.set_autocut_params('zscale')
         self.viewer.open()
 
+        self.viewer.image_viewer = self
         self.downloader = downloader
-        self.candidates = self.viewer.candidates
+
         # creating drawing canvas; initializing polygon types
         self.canvas = self.viewer.add_canvas()
         self.circle = self.canvas.get_draw_class('circle')
@@ -112,67 +176,182 @@ class ImageViewer(object):
 
         # creating key-press event handling
         self.canvas.add_callback('key-press', self._key_press, 'key', self.viewer)
-        self.canvas.add_callback('key-press', self._key_press, 'key', self.viewer)
 
         self.obs_number = 0
-        self.image = None
-        self.image_values = None
-        self._current_image = None
+        self.candidate = None
+        self.zoom = None
+        self._center = None
 
-    def _write(self):
+    def write_record(self, rejected=False):
+        try:
+            with open(self.candidate.observations[0].provisional_name+".ast", 'w+') as fobj:
+                for ob in self.candidate.observations:
+                    if rejected:
+                        ob.null_observation = True
+                    fobj.write(ob.to_string()+'\n')
+            logging.info("Written to file {}".format(self.candidate.observations[0].provisional_name+".ast"))
+        except IOError as ex:
+            logging.error("Unable to write to file.")
+            raise ex
 
-        with open(self.candidate.observations[0].provisional_name+".ast", 'w+') as fobj:
-            for ob in self.candidate.observations:
-                fobj.write(ob.to_string())
-        self.candidate = self.candidates.next()
-
+    def skip(self):
+        """
+        Skipping to the next candidate set without writing to a file.
+        """
+        # so this is where I realize there must be a better way
+        self.candidate = self.viewer.candidates.next()
+        self.load()
 
     def load(self, obs_number=0):
         """
         With the viewing window already created, Creates a FitsImage object and loads its cutout into the window.
+        Define the center of the first image to be the reference point for aligning the other two images.
 
         :param obs_number: index of which line in the file gets loaded/displayed in the viewer
+        :return Header of the loaded image
         """
+        self._center = None
         self.obs_number = obs_number
         self._load()
+        self._center = WCS(self.header).all_pix2world(self.viewer.get_data_size()[0] / 2,
+                                                      self.viewer.get_data_size()[1] / 2, 0)
+
+    def _load(self):
+        """
+        Loads an image into the viewer.
+        Checks if an HDU has been loaded already and retrieves if needed and then displays that HDU.
+
+        :return Header of the loaded image
+        """
+        # load the image if not already available, for now we'll put this in here.
+        if self.viewer.candidates is None:
+            logging.debug("No candidates loaded.")
+            return
+
+        if self.candidate is None:
+            self.candidate = self.viewer.candidates.next()
+
+        self.viewer.clear()
+        # x = self.candidate.observations[self.obs_number]
+        while True:
+            try:
+                self.viewer.load_hdu(self.downloader.get(self.candidate.observations[self.obs_number]))
+                break
+
+            except Exception:
+                logging.warning("Skipping candidate {} due to load failure".format(self.candidate))
+                self.candidate = self.viewer.candidates.next()
+
+        if self.zoom is not None:
+            self.set_zoom()
+
+        self._mark_aperture()
+        self._rotate()
+
+        if self.center is not None:
+            self._align()
+
+        self.viewer.onscreen_message("Loaded: {}".format(self.candidate.observations[self.obs_number].comment.frame),
+                                     delay=1)
+
+    @property
+    def info(self):
+        return "\n".join([x + " = " + str(self.header.get(x, "UNKNOWN")) for x in DISPLAY_KEYWORDS])
 
     def _mark_aperture(self):
         """
-        Draws a red circle on the drawing canvas in the viewing window around the celestial object
-         being observed.
+        Draws a red circle on the drawing canvas in the viewing window around the celestial object detected.
         """
         ra = self.candidate.observations[self.obs_number].coordinate.ra
         dec = self.candidate.observations[self.obs_number].coordinate.dec
-        header = self.downloader.get(self.candidate.observations[self.obs_number]).header
-        x, y = WCS(header).all_world2pix(ra, dec, 0)
+        x, y = WCS(self.header).all_world2pix(ra, dec, 0)
         self.canvas.deleteAllObjects()
         self.canvas.add(self.circle(x, y, radius=10, color='red'))
 
-    def _predict_obs_record(self):
+    def _rotate(self):
         """
-        Creates a prediction from the ObsRecord object using mp_ephem.BKOrbit's predict method.
-        Creates a circle on the canvas which is where the celestial object is predicted to be, along with its
-         associated uncertainty, also from BKOrbit's predict method.
+        Rotates the current viewer image to be oriented North up East left. This is done by taking outward vectors from
+         the origin and using their WCS values to determine the original orientation of the image. Images are then
+         flipped/rotated accordingly to be North up East left.
         """
-        self.candidate.predict(self.candidate[self.obs_number].date)
+        wcs = WCS(self.header)
+        self.viewer.transform(False, False, False)
+        x = wcs.all_pix2world([[0, 0], [1, 1], [1, 0]], 0)
+        ra1 = x[0][0]
+        ra2 = x[1][0]
+        ra3 = x[2][0]
+        dec1 = x[0][1]
+        dec2 = x[1][1]
+        dec3 = x[2][1]
 
-        # x, y = self.orb.coordinate.ra.deg, self.orb.coordinate.dec.deg
-        # tmp = self.image_values.radectopix(x, y)  # not working, hopefully will once wcs conversion is fixed
+        # phi = acos((ra2-ra1)/((ra2-ra1)**2+(dec2-dec1)**2)**0.5)
 
-        tmp = (294, 318)  # placeholder values
-        x, y = tmp[0], tmp[1]
+        delta_x = ra2 - ra1
+        delta_y = dec2 - dec1
 
-        # prediction circle
-        self.canvas.add(self.circle(x, y, radius=10, color='green'))
+        flip_x = 1
+        flip_y = 1
+        if not delta_x < 0:
+            flip_x = -1
+            if not delta_y > 0:
+                flip_y = -1
+                self.viewer.transform(True, True, False)  # def transform(self, flip_x, flip_y, swap_xy):
+            else:
+                self.viewer.transform(True, False, False)
+        elif not delta_y > 0:
+            flip_y = -1
+            self.viewer.transform(False, True, False)
 
-        # uncertainty ellipse
-        # Not sure about changing the ra/dec uncertainty from acrseconds into pix values.
-        # Current values in acrsec/degrees are on the magnitude of 10^-5, which doesn't do much as far as creating
-        #  an ellipse goes.
-        self.canvas.add(self.ellipse(x,
-                                     y,
-                                     self.candidate.dra.to('deg').value,
-                                     self.candidate.ddec.to('deg').value, color='red'))
+        delta_delta = (dec3 - dec1) * flip_y
+        delta_ra = (ra1 - ra3) * flip_x
+
+        theta = degrees(atan2(delta_delta, delta_ra))
+
+        self.viewer.rotate(theta)
+
+    def _align(self):
+        """
+        Aligns images via panning so their backgrounds stay consistent. Images requiring a pan greater than 1/2 the
+         viewing window will be ignored.
+        """
+        try:
+            x, y = WCS(self.header).all_world2pix(self.center[0], self.center[1], 0)
+
+            if not(0 < x < self.viewer.get_data_size()[0] and 0 < y < self.viewer.get_data_size()[1]):
+                logging.info("Pan out of range: ({}, {}) greater than half the viewing window.".format(x, y))
+                return
+
+            self.viewer.set_pan(x, y)
+
+        except Exception as ex:
+            logging.warning("Could not convert ra/dec to pixel values")
+            raise ex
+
+    # def _predict_obs_record(self):
+    #     """
+    #     Creates a prediction from the ObsRecord object using mp_ephem.BKOrbit's predict method.
+    #     Creates a circle on the canvas which is where the celestial object is predicted to be, along with its
+    #      associated uncertainty, also from BKOrbit's predict method.
+    #     """
+    #     self.candidate.predict(self.candidate[self.obs_number].date)
+    #
+    #     # x, y = self.orb.coordinate.ra.deg, self.orb.coordinate.dec.deg
+    #     # tmp = self.image_values.radectopix(x, y)
+    #
+    #     tmp = (294, 318)  # placeholder values
+    #     x, y = tmp[0], tmp[1]
+    #
+    #     # prediction circle
+    #     self.canvas.add(self.circle(x, y, radius=10, color='green'))
+    #
+    #     # uncertainty ellipse
+    #     # Not sure about changing the ra/dec uncertainty from acrseconds into pix values.
+    #     # Current values in acrsec/degrees are on the magnitude of 10^-5, which doesn't do much as far as creating
+    #     #  an ellipse goes.
+    #     self.canvas.add(self.ellipse(x,
+    #                                  y,
+    #                                  self.candidate.dra.to('deg').value,
+    #                                  self.candidate.ddec.to('deg').value, color='red'))
 
     def _key_press(self, canvas, keyname, opn, viewer):
         """
@@ -188,38 +367,52 @@ class ImageViewer(object):
         :param viewer: Ginga EnhancedCanvasView object
         """
         logging.debug("Got key: {} from canvas: {} with opn: {} from viewer: ".format(canvas, keyname, opn, viewer))
+
         if keyname == 'f':
-            # if/else statements for blinking. Only needs to grab the hdu from the database
-            #  once, after that it saves the hdu so it can be quickly loaded into the viewer again.
+            self.get_zoom()
             self.obs_number -= 1
+
         elif keyname == 'g':
+            self.get_zoom()
             self.obs_number += 1
-        elif keyname == 'z':
-            pass                # soon to be accept/reject shortcuts
-        elif keyname == 'c':
-            self.accept()
+
         else:
-            logging.warning("Unknown keystroke {}".format(keyname))
+            logging.debug("Unknown keystroke {}".format(keyname))  # keystrokes might be for ginga
             return
 
         self.obs_number %= len(self.candidate.observations)
-        self._load()
+        self.viewer.load()
 
-    def _load(self):
+    @property
+    def center(self):
         """
-        Checks if an HDU has been loaded already and retrieves if needed and then displays that HDU.
-        Calls _mark_aperture to draw a small circle around the celestial object.
+        Returns the center of the image in ra/dec coordinates
         """
-        # load the image if not already available, for now we'll put this in here.
-        if self.candidates is None:
-            return
-        self.viewer.clear()
-        self.viewer.load_hdu(self.downloader.get(self.candidate.observations[self.obs_number]))
-        self._mark_aperture()
-        self.viewer.onscreen_message("Loaded: {}".format(self.candidate.observations[self.obs_number].comment.frame),
-                                     delay=3)
+        if self._center is not None:
+            return self._center
 
-    def accept(self):
-        logging.warning("Accept keypress")
-        self._write()
-        return
+    @property
+    def loaded_hdu(self):
+        """
+        Return current HDU
+        """
+        return self.downloader.get(self.candidate.observations[self.obs_number])
+
+    @property
+    def header(self):
+        """
+        Return current HDU's header
+        """
+        return self.loaded_hdu.header
+
+    def get_zoom(self):
+        """
+        Stores the current image's zoom amount
+        """
+        self.zoom = self.viewer.get_zoom()
+
+    def set_zoom(self):
+        """
+        Sets the current image's zoom to what was saved from get_zoom
+        """
+        self.viewer.zoom_to(self.zoom)
