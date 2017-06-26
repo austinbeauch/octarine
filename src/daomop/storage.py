@@ -59,7 +59,7 @@ DEFAULT_FORMAT = 'fits'
 NSIDE = 32
 
 # default radius to be "cut out" when calling ra_dec_cutout. Set to .1 arc minute, or 1/360th of a degree
-CUTOUT_RADIUS = 0.1 * units.arcminute
+CUTOUT_RADIUS = 0.4 * units.arcminute
 
 
 class MyRequests(object):
@@ -616,14 +616,14 @@ class FitsImage(FitsArtifact):
         :return: FitsImage object of the associated dataset_name and ccd
         """
         # assuming frame is supposed to be in the form '1111111p11'
-        x = re.match('\d{7}[A-z]\d{2}', frame)
+        x = re.match('(?P<expnum>\d{7})(?P<version>[A-z])(?P<ccd>\d{1,2})', frame)
 
         # if there is no regex match, frame must be in the wrong format
         if x is None:
             raise ValueError('Failed to parse dataset_name and CCD # from input frame: {}'.format(frame))
 
-        observation_id = frame[:-3]
-        ccd = int(frame[-2:])
+        observation_id = x.group('expnum')
+        ccd = int(x.group('ccd'))
 
         obs = Observation(observation_id)
 
@@ -1293,6 +1293,12 @@ class Downloader(object):
         :return: fits.ImageHDU
         """
         logging.info("Retrieving {}".format(self.image_key(obs_record)))
-        image = FitsImage.from_frame(obs_record.comment.frame)
-        hdu = image.ra_dec_cutout(obs_record.coordinate)[-1]
+        try:
+            image = FitsImage.from_frame(obs_record.comment.frame)
+            hdu = image.ra_dec_cutout(obs_record.coordinate)[-1]
+        except Exception as ex:
+            logging.info(ex)
+            raise ex
+
+        logging.info("Got {}".format(hdu))
         return hdu
