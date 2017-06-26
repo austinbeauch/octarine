@@ -41,14 +41,13 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, qrunid, catalog_dir
     :param prefix:
     """
     message = storage.SUCCESS
-    catalog_dirname = "{}/{}".format(catalog_dirname, qrunid)
-    storage.mkdir("{}/{}".format(storage.DBIMAGES, catalog_dirname))
 
     if storage.get_status(task, prefix, expnum, version=version, ccd=ccd) and not force:
         logging.info("{} completed successfully for {} {} {} {}".format(task, prefix, expnum, version, ccd))
         return
 
     with storage.LoggingManager(task, str(expnum), expnum, ccd, version, dry_run):
+        storage.set_status(task, prefix, expnum, version, ccd=ccd, status='started')
         try:
             if dependency is not None and not storage.get_status(dependency, prefix, 
                                                                  expnum, "p", ccd=ccd):
@@ -59,6 +58,8 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, qrunid, catalog_dir
 
             logging.info("Running match on %s %d" % (expnum, ccd))
             catalog = match(pixel, expnum, ccd, qrunid)
+            catalog_dirname = "{}/{}".format(catalog_dirname, qrunid)
+            storage.mkdir("{}/{}".format(storage.DBIMAGES, catalog_dirname))
             split_to_hpx(pixel, catalog, catalog_dir=catalog_dirname)
 
             if dry_run:
@@ -76,8 +77,10 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, qrunid, catalog_dir
 
 
 def split_to_hpx(pixel, catalog, catalog_dir=None):
-    dataset_name = catalog.observation.dataset_name
+    dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
+    
     pix = pixel
+    logging.info("merging {} into HPX catalog stored at {}".format(catalog, catalog_dir))
     try:
         healpix_catalog = storage.HPXCatalog(pixel=pix, catalog_dir=catalog_dir)
         healpix_catalog.get()
@@ -138,8 +141,10 @@ def match(pixel, expnum, ccd, qrunid):
     # Build the HPXID column by matching against the HPX catalogs that might exit.
     catalog.table['HPXID'] = -1
     healpix = pixel
+
     master_catalog_dirname = "catalogs/master"
     storage.mkdir("{}/{}".format(storage.DBIMAGES, master_catalog_dirname))
+
     hpx_cat = storage.HPXCatalog(pixel=healpix, catalog_dir=master_catalog_dirname)
     hpx_cat_len = 0
 
@@ -156,7 +161,7 @@ def match(pixel, expnum, ccd, qrunid):
     # for all non-matched sources in this healpix we increment the counter.
     cond = numpy.all((catalog.table['HPXID'] < 0,
                       catalog.table['HEALPIX'] == healpix), axis=0)
-    catalog.table['HPXID'][cond] = [hpx_cat_len + numpy.arange(cond.sum()), ]
+    catalog.table['HPXID'][cond] = hpx_cat_len + numpy.arange(cond.sum())
     catalog.table['MATCHES'] = 0
     catalog.table['OVERLAPS'] = 0
     # Now append these new source (cond) to the end of the master catalog.
