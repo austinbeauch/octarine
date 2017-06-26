@@ -211,10 +211,10 @@ class MyPolygon(Polygon.Polygon):
             query += " OR  Plane.time_bounds_upper > {} ) ".format(mjdate + minimum_time)
 
         if start_date is not None:
-            query += " AND ( Plane.time_bounds_lower > {} ".format(start_date)
+            query += " AND Plane.time_bounds_lower > {} ".format(start_date)
 
         if end_date is not None:
-            query += " AND ( Plane.time_bounds_upper < {} ".format(end_date)
+            query += " AND Plane.time_bounds_upper < {} ".format(end_date)
 
         table = tap_query(query)
         overlaps = []
