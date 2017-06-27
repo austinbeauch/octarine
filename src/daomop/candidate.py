@@ -32,7 +32,6 @@ class ObservationSet(object):
         self.current_observation += 1
         if not self.current_observation < len(self.record['mag']):
             raise StopIteration
-        print self.record['fitsname'][self.current_observation]
         return ObsRecord(provisional_name=self.provisional_name,
                          discovery=True,
                          note1=None,

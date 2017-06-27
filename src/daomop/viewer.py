@@ -1,7 +1,9 @@
 import logging
+import multiprocessing
 from math import atan2, degrees
 
 import candidate
+import downloader
 from ginga.web.pgw import ipg, Widgets, Viewers
 from astropy.wcs import WCS
 
@@ -12,17 +14,37 @@ DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
 
 class ValidateGui(ipg.EnhancedCanvasView):
 
+    def __init__(self, logger=None, bindings=None):
+        super(ValidateGui, self).__init__(logger=logger, bindings=bindings)
+
+        self.pool = multiprocessing.Pool(5)
+
+        self.downloader = downloader.Downloader()
+
+        # creating drawing canvas; initializing polygon types
+        self.canvas = self.add_canvas()
+        self.circle = self.canvas.get_draw_class('circle')
+
+        # creating key-press event handling
+        self.canvas.add_callback('key-press', self._key_press, 'key', self)
+
+        self.obs_number = 0
+        self.candidate = None
+        self.candidates = None
+        self.zoom = None
+        self._center = None
+
+        # GUI elements
+        self.pixel_base = 1.0
+        self.readout = Widgets.Label("")
+        self.header_box = Widgets.TextArea(wrap=True, editable=True)
+
     def build_gui(self, container):
         """
         Building the GUI to be displayed in an HTML5 canvas. Currently consists of three buttons and a text box.
         Tested and working in Mozilla Firefox web browser.
         :param container: ginga.web.pgw.Widgets.TopLevel object
         """
-        self.candidates = None
-        self.image_viewer = None
-        self.pixel_base = 1.0
-        self.readout = Widgets.Label("")
-
         vbox = Widgets.VBox()
         vbox.set_border_width(2)
         vbox.set_spacing(1)
@@ -33,8 +55,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
         vbox.add_widget(self.readout, stretch=0)
 
         self.set_callback('cursor-changed', self.motion_cb)
-
-        self.top_box = Widgets.TextArea(wrap=True, editable=True)
 
         load_candidates = Widgets.TextEntry()
         load_candidates.add_callback('activated', lambda x: self.load_candidates(x))
@@ -61,40 +81,31 @@ class ValidateGui(ipg.EnhancedCanvasView):
         # browser wants to resize the canvas, distorting it
         hbox.add_widget(vbox, stretch=0)
         hbox.add_widget(Widgets.Label(''), stretch=1)
-        hbox.add_widget(self.top_box)
+        hbox.add_widget(self.header_box)
         container.set_widget(hbox)
 
     def next(self):
         """
         Load the next set of images into the viewer
         """
-        # Still not working to call candidates.next() internally
-        # if self.candidates is not None:
-        #     self.candidates.next()
-        #     self.load()
-            # self.top_box.append_text(self.load().__str__())
-
-        if self.image_viewer is not None:
-            self.image_viewer.candidate = self.candidates.next()
-            self.load()
+        self.candidate = self.candidates.next()
+        self.load()
 
     def reject(self):
         """
         Reject current observation. Write to file and load next set into the viewer
         """
         logging.info("Rejected")
-        if self.image_viewer is not None:
-            self.image_viewer.write_record(rejected=True)
-            self.next()
+        self.write_record(rejected=True)
+        self.next()
 
     def accept(self):
         """
         Accept current observation. Write to file and load next set into the viewer
         """
         logging.info("Accepted")
-        if self.image_viewer is not None:
-            self.image_viewer.write_record()
-            self.next()
+        self.write_record()
+        self.next()
 
     def load_candidates(self, event):
         """
@@ -104,146 +115,76 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         logging.info("Accepted candidate entry: {}".format(event.text))
         self.candidates = candidate.CandidateSet(int(event.text))
-
-        if self.image_viewer is not None:
-            self.load()
-
-    def load(self):
-        self.image_viewer.load()
-        print "setting"
-        self.top_box.set_text(self.image_viewer.info)
-
-
-class WebServerFactory(object):
-    """
-    The Server that the validate app will be run via.
-    """
-
-    def __enter__(self):
-        self.web_server = ipg.make_server(host=self.host,
-                                          port=self.port,
-                                          use_opencv=False,
-                                          viewer_class=self.viewer_class)
-        self.web_server.start(no_ioloop=True)
-        return self.web_server
-
-    def __init__(self, viewer_class=ValidateGui, port=9914, host='localhost'):
-        # standard setup commands; creating viewing window
-        self.viewer_class = viewer_class
-        self.port = port
-        self.host = host
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.web_server.stop()
-
-    def __del__(self):
-        self.web_server.stop()
-
-
-class ImageViewer(object):
-
-    def __init__(self, downloader, *args, **kwargs):
-        """
-        Initialization of a local, web-client based server for displaying images. The viewer should automatically pop
-         up in a new tab.
-
-        :param candidate: A BK Orbfit object that contains the information about a possible candidate.
-        :type candidate: BKOrbit
-        :param viewer: The Viewer that will be used to display images.
-        :type viewer: ipg.EnhancedCanvasViewer
-        """
-        self.pixel_base = 1
-        self.readout = Widgets.Label("")
-
-        # standard setup commands; creating viewing window
-        self.web_server = ipg.make_server(host="localhost",
-                                          port=9914,
-                                          use_opencv=False,
-                                          viewer_class=ValidateGui)
-        self.web_server.start(no_ioloop=True)
-        self.viewer = self.web_server.get_viewer("ID")
-        self.viewer.enable_autocuts('on')
-        self.viewer.set_autocut_params('zscale')
-        self.viewer.open()
-
-        self.viewer.image_viewer = self
-        self.downloader = downloader
-
-        # creating drawing canvas; initializing polygon types
-        self.canvas = self.viewer.add_canvas()
-        self.circle = self.canvas.get_draw_class('circle')
-        self.ellipse = self.canvas.get_draw_class('ellipse')
-
-        # creating key-press event handling
-        self.canvas.add_callback('key-press', self._key_press, 'key', self.viewer)
-
-        self.obs_number = 0
-        self.candidate = None
-        self.zoom = None
-        self._center = None
-
-    def write_record(self, rejected=False):
-        try:
-            with open(self.candidate.observations[0].provisional_name+".ast", 'w+') as fobj:
-                for ob in self.candidate.observations:
-                    if rejected:
-                        ob.null_observation = True
-                    fobj.write(ob.to_string()+'\n')
-            logging.info("Written to file {}".format(self.candidate.observations[0].provisional_name+".ast"))
-        except IOError as ex:
-            logging.error("Unable to write to file.")
-            raise ex
-
-    def skip(self):
-        """
-        Skipping to the next candidate set without writing to a file.
-        """
-        # so this is where I realize there must be a better way
-        self.candidate = self.viewer.candidates.next()
         self.load()
+
+    def _key_press(self, canvas, keyname, opn, viewer):
+        """
+        Method called once a keyboard stoke has been detected. Using two un-bound keys, f & g, to cycle different
+         cutout hdu's from the ObsRecord.
+        Parameters canvas, opn, and viewer are all needed for the method to be called even though they are not
+         directly used.
+
+        :param canvas: Ginga DrawingCanvas Object
+        :param keyname: Name of the key that has been pressed
+        :param opn: str "key"
+        :param viewer: Ginga EnhancedCanvasView object
+        """
+        logging.debug("Got key: {} from canvas: {} with opn: {} from viewer: {}".format(canvas, keyname, opn, viewer))
+        if keyname == 'f':
+            self.zoom = self.get_zoom()
+            self.obs_number -= 1
+
+        elif keyname == 'g':
+            self.zoom = self.get_zoom()
+            self.obs_number += 1
+
+        else:
+            logging.debug("Unknown keystroke {}".format(keyname))  # keystrokes can be for ginga
+            return
+
+        self.obs_number %= len(self.candidate.observations)
+        self._load()
 
     def load(self, obs_number=0):
         """
-        With the viewing window already created, Creates a FitsImage object and loads its cutout into the window.
-        Define the center of the first image to be the reference point for aligning the other two images.
+        With the viewing window already created, Creates a FitsImage object and loads its cutout into the window and
+         displays select header values (see: DISPLAY_KEYWORDS).
+        Define the center of the first image to be the reference point for aligning the other two images in the set.
 
         :param obs_number: index of which line in the file gets loaded/displayed in the viewer
-        :return Header of the loaded image
         """
         self._center = None
         self.obs_number = obs_number
         self._load()
-        self._center = WCS(self.header).all_pix2world(self.viewer.get_data_size()[0] / 2,
-                                                      self.viewer.get_data_size()[1] / 2, 0)
+        self._center = WCS(self.header).all_pix2world(self.get_data_size()[0] / 2,
+                                                      self.get_data_size()[1] / 2, 0)
 
     def _load(self):
         """
-        Loads an image into the viewer.
+        Loads an image into the viewer, applying appropriate transformations for proper display.
         Checks if an HDU has been loaded already and retrieves if needed and then displays that HDU.
-
-        :return Header of the loaded image
         """
         # load the image if not already available, for now we'll put this in here.
-        if self.viewer.candidates is None:
+        if self.candidates is None:
             logging.debug("No candidates loaded.")
             return
 
         if self.candidate is None:
-            self.candidate = self.viewer.candidates.next()
+            self.candidate = self.candidates.next()
 
-        self.viewer.clear()
-        # x = self.candidate.observations[self.obs_number]
+        self.clear()
+
         while True:
+            # noinspection PyBroadException
             try:
-                self.viewer.load_hdu(self.downloader.get(self.candidate.observations[self.obs_number]))
+                self.load_hdu(self.downloader.get(self.candidate.observations[self.obs_number]))
                 break
-
-            except Exception:
+            except:
                 logging.warning("Skipping candidate {} due to load failure".format(self.candidate))
-                self.candidate = self.viewer.candidates.next()
+                self.candidate = self.candidates.next()
 
         if self.zoom is not None:
-            self.set_zoom()
+            self.zoom_to(self.zoom)
 
         self._mark_aperture()
         self._rotate()
@@ -251,21 +192,19 @@ class ImageViewer(object):
         if self.center is not None:
             self._align()
 
-        self.viewer.onscreen_message("Loaded: {}".format(self.candidate.observations[self.obs_number].comment.frame),
-                                     delay=1)
-
-    @property
-    def info(self):
-        return "\n".join([x + " = " + str(self.header.get(x, "UNKNOWN")) for x in DISPLAY_KEYWORDS])
+        self.onscreen_message("Loaded: {}".format(self.candidate.observations[self.obs_number].comment.frame), delay=1)
+        self.header_box.set_text(self.info)
 
     def _mark_aperture(self):
         """
         Draws a red circle on the drawing canvas in the viewing window around the celestial object detected.
         """
+        # the cutout is considered the first object on the canvas, this deletes everything over top of it
+        self.canvas.delete_objects(self.canvas.get_objects()[1:])
+
         ra = self.candidate.observations[self.obs_number].coordinate.ra
         dec = self.candidate.observations[self.obs_number].coordinate.dec
         x, y = WCS(self.header).all_world2pix(ra, dec, 0)
-        self.canvas.deleteAllObjects()
         self.canvas.add(self.circle(x, y, radius=10, color='red'))
 
     def _rotate(self):
@@ -275,7 +214,7 @@ class ImageViewer(object):
          flipped/rotated accordingly to be North up East left.
         """
         wcs = WCS(self.header)
-        self.viewer.transform(False, False, False)
+        self.transform(False, False, False)
         x = wcs.all_pix2world([[0, 0], [1, 1], [1, 0]], 0)
         ra1 = x[0][0]
         ra2 = x[1][0]
@@ -295,37 +234,94 @@ class ImageViewer(object):
             flip_x = -1
             if not delta_y > 0:
                 flip_y = -1
-                self.viewer.transform(True, True, False)  # def transform(self, flip_x, flip_y, swap_xy):
+                self.transform(True, True, False)  # def transform(self, flip_x, flip_y, swap_xy):
             else:
-                self.viewer.transform(True, False, False)
+                self.transform(True, False, False)
         elif not delta_y > 0:
             flip_y = -1
-            self.viewer.transform(False, True, False)
+            self.transform(False, True, False)
 
         delta_delta = (dec3 - dec1) * flip_y
         delta_ra = (ra1 - ra3) * flip_x
 
         theta = degrees(atan2(delta_delta, delta_ra))
 
-        self.viewer.rotate(theta)
+        self.rotate(theta)
 
     def _align(self):
         """
         Aligns images via panning so their backgrounds stay consistent. Images requiring a pan greater than 1/2 the
          viewing window will be ignored.
         """
+        x, y = WCS(self.header).all_world2pix(self.center[0], self.center[1], 0)
+
+        if not(0 < x < self.get_data_size()[0] and 0 < y < self.get_data_size()[1]):
+            logging.info("Pan out of range: ({}, {}) greater than half the viewing window.".format(x, y))
+            return
+
+        self.set_pan(x, y)
+
+    def write_record(self, rejected=False):
+        """
+        Writing observation lines to a new file.
+        :param rejected: Whether or not the candidate set contains a valid celestial object
+        :type rejected: bool
+        """
         try:
-            x, y = WCS(self.header).all_world2pix(self.center[0], self.center[1], 0)
-
-            if not(0 < x < self.viewer.get_data_size()[0] and 0 < y < self.viewer.get_data_size()[1]):
-                logging.info("Pan out of range: ({}, {}) greater than half the viewing window.".format(x, y))
-                return
-
-            self.viewer.set_pan(x, y)
-
-        except Exception as ex:
-            logging.warning("Could not convert ra/dec to pixel values")
+            with open(self.candidate.observations[0].provisional_name+".ast", 'w+') as fobj:
+                for ob in self.candidate.observations:
+                    if rejected:
+                        ob.null_observation = True
+                    fobj.write(ob.to_string()+'\n')
+            logging.info("Written to file {}".format(self.candidate.observations[0].provisional_name+".ast"))
+        except IOError as ex:
+            logging.error("Unable to write to file.")
             raise ex
+
+    @property
+    def center(self):
+        """
+        Returns the center of the image in ra/dec coordinates
+        """
+        if self._center is not None:
+            return self._center
+
+    @property
+    def loaded_hdu(self):
+        """
+        Return current HDU
+        """
+        return self.downloader.get(self.candidate.observations[self.obs_number])
+
+    @property
+    def header(self):
+        """
+        Return current HDU's header
+        """
+        return self.loaded_hdu.header
+
+    @property
+    def info(self):
+        return "\n".join([x + " = " + str(self.header.get(x, "UNKNOWN")) for x in DISPLAY_KEYWORDS])
+
+
+class ImageViewer(object):
+
+    def __init__(self):
+        """
+        Initialization of a local, web-client based server for displaying images. The viewer should automatically pop
+         up in a new tab.
+        """
+        # standard setup commands; creating viewing window
+        self.web_server = ipg.make_server(host="localhost",
+                                          port=9914,
+                                          use_opencv=False,
+                                          viewer_class=ValidateGui)
+        self.web_server.start(no_ioloop=True)
+        self.viewer = self.web_server.get_viewer("ID")
+        self.viewer.enable_autocuts('on')
+        self.viewer.set_autocut_params('zscale')
+        self.viewer.open()
 
     # def _predict_obs_record(self):
     #     """
@@ -353,66 +349,28 @@ class ImageViewer(object):
     #                                  self.candidate.dra.to('deg').value,
     #                                  self.candidate.ddec.to('deg').value, color='red'))
 
-    def _key_press(self, canvas, keyname, opn, viewer):
-        """
-        Method called once a keyboard stoke has been detected. Using two un-bound keys, f & g, to cycle different
-         cutout hdu's from the ObsRecord.
-        Parameters canvas, opn, and viewer are all needed fo the method to be called even though they are not
-         directly used in the method. Method appears to be in connection with the add_callback method call from
-         __init__, but isn't used directly.
 
-        :param canvas: Ginga DrawingCanvas Object
-        :param keyname: Name of the key that has been pressed
-        :param opn: str "key"
-        :param viewer: Ginga EnhancedCanvasView object
-        """
-        logging.debug("Got key: {} from canvas: {} with opn: {} from viewer: ".format(canvas, keyname, opn, viewer))
+class WebServerFactory(object):
+    """
+    The Server that the validate app will be run via.
+    """
 
-        if keyname == 'f':
-            self.get_zoom()
-            self.obs_number -= 1
+    def __enter__(self):
+        self.web_server = ipg.make_server(host=self.host,
+                                          port=self.port,
+                                          use_opencv=False,
+                                          viewer_class=self.viewer_class)
+        self.web_server.start(no_ioloop=True)
+        return self.web_server
 
-        elif keyname == 'g':
-            self.get_zoom()
-            self.obs_number += 1
+    def __init__(self, viewer_class=ValidateGui, port=9914, host='localhost'):
+        # standard setup commands; creating viewing window
+        self.viewer_class = viewer_class
+        self.port = port
+        self.host = host
 
-        else:
-            logging.debug("Unknown keystroke {}".format(keyname))  # keystrokes might be for ginga
-            return
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.web_server.stop()
 
-        self.obs_number %= len(self.candidate.observations)
-        self.viewer.load()
-
-    @property
-    def center(self):
-        """
-        Returns the center of the image in ra/dec coordinates
-        """
-        if self._center is not None:
-            return self._center
-
-    @property
-    def loaded_hdu(self):
-        """
-        Return current HDU
-        """
-        return self.downloader.get(self.candidate.observations[self.obs_number])
-
-    @property
-    def header(self):
-        """
-        Return current HDU's header
-        """
-        return self.loaded_hdu.header
-
-    def get_zoom(self):
-        """
-        Stores the current image's zoom amount
-        """
-        self.zoom = self.viewer.get_zoom()
-
-    def set_zoom(self):
-        """
-        Sets the current image's zoom to what was saved from get_zoom
-        """
-        self.viewer.zoom_to(self.zoom)
+    def __del__(self):
+        self.web_server.stop()
