@@ -1,7 +1,8 @@
 import logging
-import multiprocessing
+from multiprocessing.dummy import Pool, Lock
 from copy import deepcopy
 from math import atan2, degrees
+from multiprocessing.pool import ApplyResult
 
 import candidate
 import downloader
@@ -9,7 +10,8 @@ from ginga.web.pgw import ipg, Widgets, Viewers
 from astropy.wcs import WCS
 
 dbimages = "vos:jkavelaars/TNORecon/dbimages"
-logging.basicConfig(level=logging.INFO)
+
+logging.basicConfig(level=logging.INFO, format="%(modeule)s.%(funcName)s:%(lineno)s %(message)s")
 DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
 
 
@@ -17,10 +19,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
     def __init__(self, logger=None, bindings=None):
         super(ValidateGui, self).__init__(logger=logger, bindings=bindings)
-
-        self.pool = multiprocessing.Pool(5)
-
         self.downloader = downloader.Downloader()
+        self.pool = Pool(processes=5)
+        self.lock = Lock()
+        self.image_list = {}
 
         # creating drawing canvas; initializing polygon types
         self.canvas = self.add_canvas()
@@ -116,11 +118,12 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         logging.info("Accepted candidate entry: {}".format(event.text))
         self.candidates = candidate.CandidateSet(int(event.text))
-        # candidates = deepcopy(self.candidates)
-        # for bk_orbit in candidates:
-        #     for obs_record in bk_orbit.observations:
-        #         self.downloader.getter_lock[obs_record] = self.pool.apply_async(self.downloader.get, obs_record)
-        #         print self.downloader.getter_lock[obs_record]
+        candidates = deepcopy(self.candidates)
+        for bk_orbit in candidates:
+            for obs_record in bk_orbit.observations:
+                key = self.downloader.image_key(obs_record)
+                self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
+
         self.load()
 
     def _key_press(self, canvas, keyname, opn, viewer):
@@ -179,14 +182,20 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.candidate = self.candidates.next()
 
         self.clear()
-
         while True:
             # noinspection PyBroadException
             try:
-                self.load_hdu(self.downloader.get(self.candidate.observations[self.obs_number]))
+                obs_record = self.candidate.observations[self.obs_number]
+                key = self.downloader.image_key(obs_record)
+                with self.lock:
+                    hdu = (isinstance(self.image_list[key], ApplyResult) and self.image_list[key].get()
+                           or self.image_list[key])
+                    self.image_list[key] = hdu  # create astroimage, do call like in load_hdu to canvas.set_image
+                self.load_hdu(self.image_list[key])
                 break
-            except:
-                logging.warning("Skipping candidate {} due to load failure".format(self.candidate))
+            except Exception as ex:
+                logging.error(str(ex))
+                logging.warning("Skipping candidate {} due to load failure".format(self.obs_number))
                 self.candidate = self.candidates.next()
 
         if self.zoom is not None:
