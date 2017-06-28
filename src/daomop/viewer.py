@@ -6,12 +6,13 @@ from multiprocessing.pool import ApplyResult
 
 import candidate
 import downloader
+from ginga import AstroImage
 from ginga.web.pgw import ipg, Widgets, Viewers
 from astropy.wcs import WCS
 
 dbimages = "vos:jkavelaars/TNORecon/dbimages"
 
-logging.basicConfig(level=logging.INFO, format="%(modeule)s.%(funcName)s:%(lineno)s %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(module)s.%(funcName)s:%(lineno)s %(message)s")
 DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
 
 
@@ -23,6 +24,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.pool = Pool(processes=5)
         self.lock = Lock()
         self.image_list = {}
+        self.list_of_images = {}
 
         # creating drawing canvas; initializing polygon types
         self.canvas = self.add_canvas()
@@ -187,12 +189,20 @@ class ValidateGui(ipg.EnhancedCanvasView):
             try:
                 obs_record = self.candidate.observations[self.obs_number]
                 key = self.downloader.image_key(obs_record)
+
                 with self.lock:
                     hdu = (isinstance(self.image_list[key], ApplyResult) and self.image_list[key].get()
                            or self.image_list[key])
                     self.image_list[key] = hdu  # create astroimage, do call like in load_hdu to canvas.set_image
-                self.load_hdu(self.image_list[key])
+
+                if key not in self.image_list:
+                    image = AstroImage.AstroImage(logger=self.logger)
+                    image.load_hdu(self.downloader.get(self.candidate.observations[self.obs_number]))
+                    self.image_list[key] = image
+
+                self.set_image(self.image_list[key])
                 break
+
             except Exception as ex:
                 logging.error(str(ex))
                 logging.warning("Skipping candidate {} due to load failure".format(self.obs_number))
