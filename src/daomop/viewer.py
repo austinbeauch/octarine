@@ -24,7 +24,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.pool = Pool(processes=5)
         self.lock = Lock()
         self.image_list = {}
-        self.list_of_images = {}
+        self.astro_images = {}
 
         # creating drawing canvas; initializing polygon types
         self.canvas = self.add_canvas()
@@ -183,24 +183,24 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if self.candidate is None:
             self.candidate = self.candidates.next()
 
-        self.clear()
         while True:
             # noinspection PyBroadException
+
             try:
-                obs_record = self.candidate.observations[self.obs_number]
-                key = self.downloader.image_key(obs_record)
+                key = self.downloader.image_key(self.candidate.observations[self.obs_number])
 
                 with self.lock:
                     hdu = (isinstance(self.image_list[key], ApplyResult) and self.image_list[key].get()
                            or self.image_list[key])
-                    self.image_list[key] = hdu  # create astroimage, do call like in load_hdu to canvas.set_image
 
-                if key not in self.image_list:
+                    self.image_list[key] = hdu
+
+                if key not in self.astro_images:
                     image = AstroImage.AstroImage(logger=self.logger)
-                    image.load_hdu(self.downloader.get(self.candidate.observations[self.obs_number]))
-                    self.image_list[key] = image
+                    image.load_hdu(self.image_list[key])
+                    self.astro_images[key] = image
 
-                self.set_image(self.image_list[key])
+                self.set_image(self.astro_images[key])
                 break
 
             except Exception as ex:
