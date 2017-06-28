@@ -1,16 +1,14 @@
 import logging
 from multiprocessing.dummy import Pool, Lock
-from copy import deepcopy
 from math import atan2, degrees
 from multiprocessing.pool import ApplyResult
 
 import candidate
 import downloader
+import storage
 from ginga import AstroImage
 from ginga.web.pgw import ipg, Widgets, Viewers
 from astropy.wcs import WCS
-
-dbimages = "vos:jkavelaars/TNORecon/dbimages"
 
 logging.basicConfig(level=logging.INFO, format="%(module)s.%(funcName)s:%(lineno)s %(message)s")
 DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
@@ -48,7 +46,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Building the GUI to be displayed in an HTML5 canvas. Currently consists of three buttons, a text entry box,
          and a text area.
-        Tested and working in Mozilla Firefox web browser.
+        Tested and working in Mozilla Firefox and Google Chrome web browsers.
         :param container: ginga.web.pgw.Widgets.TopLevel object
         """
         vbox = Widgets.VBox()
@@ -123,15 +121,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
         logging.info("Accepted candidate entry: {}".format(event.text))
         self.candidates = candidate.CandidateSet(int(event.text))
 
-        candidates = deepcopy(self.candidates)  # circular copies somehow fix a bug where two key numbers get swapped
-
         with self.lock:
             for bk_orbit in self.candidates:
                 for obs_record in bk_orbit.observations:
                     key = self.downloader.image_key(obs_record)
                     self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
 
-        self.candidates = deepcopy(candidates)
+        self.candidates = candidate.CandidateSet(int(event.text))
         self.load()
 
     def _key_press(self, canvas, keyname, opn, viewer):
@@ -298,12 +294,14 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :type rejected: bool
         """
         try:
-            with open(self.candidate.observations[0].provisional_name+".ast", 'w+') as fobj:
+            art = storage.ASTRecord(self.candidate.observations[0].provisional_name)
+            with open(art.filename, 'w+') as fobj:
                 for ob in self.candidate.observations:
                     if rejected:
                         ob.null_observation = True
                     fobj.write(ob.to_string()+'\n')
             logging.info("Written to file {}".format(self.candidate.observations[0].provisional_name+".ast"))
+            art.put()
         except IOError as ex:
             logging.error("Unable to write to file.")
             raise ex

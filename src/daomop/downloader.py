@@ -46,7 +46,7 @@ class Downloader(object):
         :type obs_record: mp_ephem.ObsRecord
         :return: fits.ImageHDU
         """
-        logging.info("Retrieving {}".format(self.image_key(obs_record)))
+        logging.debug("Retrieving {}".format(self.image_key(obs_record)))
         try:
             image = storage.FitsImage.from_frame(obs_record.comment.frame)
             hdu = image.ra_dec_cutout(obs_record.coordinate)[-1]
@@ -54,5 +54,5 @@ class Downloader(object):
             logging.info(ex)
             raise ex
 
-        logging.info("Got {}".format(self.image_key(obs_record)))
+        logging.debug("Got {}".format(self.image_key(obs_record)))
         return hdu

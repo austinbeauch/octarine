@@ -271,6 +271,8 @@ class Artifact(object):
         self._version = version
         self._prefix = prefix
         self._hdulist = None
+        self.fpt = None
+        self._filename = None
 
     @property
     def subdir(self):
@@ -352,6 +354,18 @@ class Artifact(object):
     def delete(self):
         """Delete a file from VOSpace"""
         delete(self.uri)
+
+
+class TemporaryArticaft(Artifact):
+
+    @property
+    def filename(self):
+
+        if self._filename is None:
+            self.fpt = tempfile.NamedTemporaryFile(suffix=self.ext)
+            self._filename = self.fpt.name
+
+        return self._filename
 
 
 class FitsArtifact(Artifact):
@@ -668,6 +682,13 @@ class FitsImage(FitsArtifact):
         ra_dec = "({},{},{})".format(skycoord.ra.deg, skycoord.dec.deg, radius.to('degree').value)
 
         return self.cutout(cutout=ra_dec, return_file=False)
+
+
+class ASTRecord(TemporaryArticaft):
+    def __init__(self, provisional_name, ext='.ast', *args, **kwargs):
+        dbimages = os.path.join(os.path.dirname(DBIMAGES), CATALOG)
+        obs = Observation(provisional_name, dbimages=dbimages)
+        super(ASTRecord, self).__init__(obs, ext=ext, *args, **kwargs)
 
 
 class HPXCatalog(FitsTable):
