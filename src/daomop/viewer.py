@@ -209,15 +209,15 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 logging.warning("Skipping candidate {} due to load failure".format(self.obs_number))
                 self.candidate = self.candidates.next()
 
+        if self.zoom is not None:
+            self.zoom_to(self.zoom)
+
         self._rotate()
 
         if self.center is not None:
             self._align()
 
         self._mark_aperture()
-
-        if self.zoom is not None:
-            self.zoom_to(self.zoom)
 
         self.header_box.set_text(self.info)
         self.onscreen_message("Loaded: {}"
