@@ -174,6 +174,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Loads an image into the viewer, applying appropriate transformations for proper display.
         Checks if an HDU has been loaded already and retrieves if needed and then displays that HDU.
+        Uses multiprocessing techniques for simultaneous downloads and dictionaries to keep track of which images
+         have been already loaded for faster image switching.
         """
         # load the image if not already available, for now we'll put this in here.
         if self.candidates is None:
@@ -185,7 +187,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         while True:
             # noinspection PyBroadException
-
             try:
                 key = self.downloader.image_key(self.candidate.observations[self.obs_number])
 
@@ -208,17 +209,19 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 logging.warning("Skipping candidate {} due to load failure".format(self.obs_number))
                 self.candidate = self.candidates.next()
 
-        if self.zoom is not None:
-            self.zoom_to(self.zoom)
-
-        self._mark_aperture()
         self._rotate()
 
         if self.center is not None:
             self._align()
 
-        self.onscreen_message("Loaded: {}".format(self.candidate.observations[self.obs_number].comment.frame), delay=1)
+        self._mark_aperture()
+
+        if self.zoom is not None:
+            self.zoom_to(self.zoom)
+
         self.header_box.set_text(self.info)
+        self.onscreen_message("Loaded: {}"
+                              .format(self.candidate.observations[self.obs_number].comment.frame), delay=0.5)
 
     def _mark_aperture(self):
         """

@@ -20,7 +20,14 @@ class Downloader(object):
         return obs_record.comment.frame + obs_record.provisional_name
 
     def get(self, obs_record):
+        """
+        Returns the HDU of a given observation record.
+        Uses locks on threads for multiprocessing to retrieve multiple HDU's in parallel.
 
+        :param obs_record: the ObsRecord for which the image is to be retrieved
+        :type obs_record: mp_ephem.ObsRecord
+        :return: astropy.io.fits.hdu.image.PrimaryHDU
+        """
         with self.lock:
             if self.image_key(obs_record) not in self.locks:
                 self.locks[self.image_key(obs_record)] = Lock()
@@ -33,7 +40,7 @@ class Downloader(object):
 
     def get_hdu(self, obs_record):
         """
-        Retrieve a fits image associated with a given obs_record and return the HDU off the assocaited cutout.
+        Retrieve a fits image associated with a given obs_record and return the HDU off the associated cutout.
 
         :param obs_record: the ObsRecord for which the image is to be retrieved
         :type obs_record: mp_ephem.ObsRecord
