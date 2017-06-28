@@ -46,7 +46,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
     def build_gui(self, container):
         """
-        Building the GUI to be displayed in an HTML5 canvas. Currently consists of three buttons and a text box.
+        Building the GUI to be displayed in an HTML5 canvas. Currently consists of three buttons, a text entry box,
+         and a text area.
         Tested and working in Mozilla Firefox web browser.
         :param container: ginga.web.pgw.Widgets.TopLevel object
         """
@@ -61,7 +62,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         self.set_callback('cursor-changed', self.motion_cb)
 
-        load_candidates = Widgets.TextEntry()
+        load_candidates = Widgets.TextEntry(editable=False)  # can still edit text area?
         load_candidates.add_callback('activated', lambda x: self.load_candidates(x))
 
         accept = Widgets.Button("Accept")
@@ -93,6 +94,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Load the next set of images into the viewer
         """
+        self.obs_number = 0
         self.candidate = self.candidates.next()
         self.load()
 
@@ -114,18 +116,22 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
     def load_candidates(self, event):
         """
-        Initial candidates loaded into the viewer
+        Initial candidates loaded into the viewer. Starts up a threadpool to download images simultaneously.
 
         :param event: Catalogue number containing dataset
         """
         logging.info("Accepted candidate entry: {}".format(event.text))
         self.candidates = candidate.CandidateSet(int(event.text))
-        candidates = deepcopy(self.candidates)
-        for bk_orbit in candidates:
-            for obs_record in bk_orbit.observations:
-                key = self.downloader.image_key(obs_record)
-                self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
 
+        candidates = deepcopy(self.candidates)  # circular copies somehow fix a bug where two key numbers get swapped
+
+        with self.lock:
+            for bk_orbit in self.candidates:
+                for obs_record in bk_orbit.observations:
+                    key = self.downloader.image_key(obs_record)
+                    self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
+
+        self.candidates = deepcopy(candidates)
         self.load()
 
     def _key_press(self, canvas, keyname, opn, viewer):
@@ -142,17 +148,16 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         logging.debug("Got key: {} from canvas: {} with opn: {} from viewer: {}".format(canvas, keyname, opn, viewer))
         if keyname == 'f':
-            self.zoom = self.get_zoom()
             self.obs_number -= 1
 
         elif keyname == 'g':
-            self.zoom = self.get_zoom()
             self.obs_number += 1
 
         else:
             logging.debug("Unknown keystroke {}".format(keyname))  # keystrokes can be for ginga
             return
 
+        self.zoom = self.get_zoom()
         self.obs_number %= len(self.candidate.observations)
         self._load()
 
@@ -183,7 +188,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
             return
 
         if self.candidate is None:
-            self.candidate = self.candidates.next()
+            self.next()
 
         while True:
             # noinspection PyBroadException
@@ -193,7 +198,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 with self.lock:
                     hdu = (isinstance(self.image_list[key], ApplyResult) and self.image_list[key].get()
                            or self.image_list[key])
-
                     self.image_list[key] = hdu
 
                 if key not in self.astro_images:
@@ -207,7 +211,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
             except Exception as ex:
                 logging.error(str(ex))
                 logging.warning("Skipping candidate {} due to load failure".format(self.obs_number))
-                self.candidate = self.candidates.next()
+                self.next()
 
         if self.zoom is not None:
             self.zoom_to(self.zoom)
@@ -227,7 +231,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Draws a red circle on the drawing canvas in the viewing window around the celestial object detected.
         """
-        # the cutout is considered the first object on the canvas, this deletes everything over top of it
+        # the image cutout is considered the first object on the canvas, this deletes everything over top of it
         self.canvas.delete_objects(self.canvas.get_objects()[1:])
 
         ra = self.candidate.observations[self.obs_number].coordinate.ra
@@ -250,8 +254,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
         dec1 = x[0][1]
         dec2 = x[1][1]
         dec3 = x[2][1]
-
-        # phi = acos((ra2-ra1)/((ra2-ra1)**2+(dec2-dec1)**2)**0.5)
 
         delta_x = ra2 - ra1
         delta_y = dec2 - dec1
@@ -284,7 +286,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         x, y = WCS(self.header).all_world2pix(self.center[0], self.center[1], 0)
 
         if not(0 < x < self.get_data_size()[0] and 0 < y < self.get_data_size()[1]):
-            logging.info("Pan out of range: ({}, {}) greater than half the viewing window.".format(x, y))
+            logging.info("Pan out of range: ({}, {}) is greater than half the viewing window.".format(x, y))
             return
 
         self.set_pan(x, y)
