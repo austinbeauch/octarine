@@ -27,8 +27,8 @@ import logging
 import os
 from subprocess import CalledProcessError
 
-import storage
-import util
+from . import storage
+from . import util
 
 task = "mk_mopheader"
 dependency = 'update_header'

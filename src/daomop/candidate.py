@@ -1,9 +1,8 @@
 import sys
-
 import string
-import storage
 from mp_ephem import ObsRecord, BKOrbit
 from astropy.time import Time
+from . import storage
 
 
 def provisional(mjd, hpx, count):
