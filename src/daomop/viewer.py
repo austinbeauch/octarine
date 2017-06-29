@@ -1,3 +1,4 @@
+import sys
 import logging
 from multiprocessing.dummy import Pool, Lock
 from math import atan2, degrees
@@ -8,6 +9,7 @@ import downloader
 import storage
 from ginga import AstroImage
 from ginga.web.pgw import ipg, Widgets, Viewers
+from ginga.misc import log
 from astropy.wcs import WCS
 
 logging.basicConfig(level=logging.INFO, format="%(module)s.%(funcName)s:%(lineno)s %(message)s")
@@ -16,8 +18,15 @@ DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
 
 class ValidateGui(ipg.EnhancedCanvasView):
 
-    def __init__(self, logger=None, bindings=None):
+    def __init__(self, logger, window, bindings=None):
         super(ValidateGui, self).__init__(logger=logger, bindings=bindings)
+
+        self.logger = logger
+        self.top = window
+
+        self.enable_autocuts('on')
+        self.set_autocut_params('zscale')
+
         self.downloader = downloader.Downloader()
         self.pool = Pool(processes=5)
         self.lock = Lock()
@@ -41,6 +50,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.pixel_base = 1.0
         self.readout = Widgets.Label("")
         self.header_box = Widgets.TextArea(wrap=True, editable=True)
+
+        self.build_gui(self.top)
 
     def build_gui(self, container):
         """
@@ -92,6 +103,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Load the next set of images into the viewer
         """
+        logging.info("candidates: ".format(self.candidates))
         self.obs_number = 0
         self.candidate = self.candidates.next()
         self.load()
@@ -128,6 +140,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
 
         self.candidates = candidate.CandidateSet(int(event.text))
+        logging.info("candidates: {}".format(self.candidates))
         self.load()
 
     def _key_press(self, canvas, keyname, opn, viewer):
@@ -351,32 +364,6 @@ class ImageViewer(object):
         self.viewer.set_autocut_params('zscale')
         self.viewer.open()
 
-    # def _predict_obs_record(self):
-    #     """
-    #     Creates a prediction from the ObsRecord object using mp_ephem.BKOrbit's predict method.
-    #     Creates a circle on the canvas which is where the celestial object is predicted to be, along with its
-    #      associated uncertainty, also from BKOrbit's predict method.
-    #     """
-    #     self.candidate.predict(self.candidate[self.obs_number].date)
-    #
-    #     # x, y = self.orb.coordinate.ra.deg, self.orb.coordinate.dec.deg
-    #     # tmp = self.image_values.radectopix(x, y)
-    #
-    #     tmp = (294, 318)  # placeholder values
-    #     x, y = tmp[0], tmp[1]
-    #
-    #     # prediction circle
-    #     self.canvas.add(self.circle(x, y, radius=10, color='green'))
-    #
-    #     # uncertainty ellipse
-    #     # Not sure about changing the ra/dec uncertainty from acrseconds into pix values.
-    #     # Current values in acrsec/degrees are on the magnitude of 10^-5, which doesn't do much as far as creating
-    #     #  an ellipse goes.
-    #     self.canvas.add(self.ellipse(x,
-    #                                  y,
-    #                                  self.candidate.dra.to('deg').value,
-    #                                  self.candidate.ddec.to('deg').value, color='red'))
-
 
 class WebServerFactory(object):
     """
@@ -402,3 +389,51 @@ class WebServerFactory(object):
 
     def __del__(self):
         self.web_server.stop()
+
+
+def main(params):
+
+    logger = log.get_logger("daomop", options=params)
+
+    app = Widgets.Application(logger=logger,
+                              host=options.host, port=options.port)
+
+    #  create top level window
+    window = app.make_window("Planet Finder v1.0")
+
+    # our own viewer object, customized with methods (see above)
+    ValidateGui(logger, window)
+
+    try:
+        app.start()
+
+    except KeyboardInterrupt:
+        logger.info("Terminating viewer...")
+        window.close()
+
+if __name__ == "__main__":
+
+    # Parse command line options with nifty optparse module
+    from optparse import OptionParser
+
+    usage = "usage: %prog [options] cmd [args]"
+    optprs = OptionParser(usage=usage, version='%%prog')
+
+    optprs.add_option("--host", dest="host", metavar="HOST",
+                      default='localhost',
+                      help="Listen on HOST for connections")
+    optprs.add_option("--log", dest="logfile", metavar="FILE",
+                      help="Write logging output to FILE")
+    optprs.add_option("--loglevel", dest="loglevel", metavar="LEVEL",
+                      type='int', default=logging.INFO,
+                      help="Set logging level to LEVEL")
+    optprs.add_option("--port", dest="port", metavar="PORT",
+                      type=int, default=9909,
+                      help="Listen on PORT for connections")
+    optprs.add_option("--stderr", dest="logstderr", default=False,
+                      action="store_true",
+                      help="Copy logging also to stderr")
+
+    (options, args) = optprs.parse_args(sys.argv[1:])
+
+    main(options)
