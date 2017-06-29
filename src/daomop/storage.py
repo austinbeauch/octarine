@@ -15,9 +15,10 @@ from astropy.table import Table
 from astropy.io import fits, ascii
 from astropy.time import Time
 from cadcutils.exceptions import BadRequestException, AlreadyExistsException, NotFoundException
+from numpy.linalg import LinAlgError
 from sip_tpv import pv_to_sip
-
-import util
+from copy import deepcopy
+from . import util
 import vospace
 from wcs import WCS
 
@@ -161,6 +162,25 @@ class Task(object):
             return self.dependency.finished
 
 
+def get_cfis_exposure_table(start_date=None, end_date=None):
+
+    query  = """SELECT Observation.observationID AS "observationID" """
+    query += """FROM caom2.Plane AS Plane JOIN caom2.Observation AS Observation ON Plane.obsID = Observation.obsID """
+    query += """WHERE  ( Plane.calibrationLevel = '1' AND Plane.energy_bandpassName IN ( 'r.MP9602','r.MP9601' ) """
+    query += """AND Observation.instrument_name = 'MegaPrime' """
+    query += """AND Observation.collection = 'CFHT' """
+    query += """AND lower(Observation.proposal_title) LIKE '%cfis%' """
+    query += """AND  ( Plane.quality_flag IS NULL OR Plane.quality_flag != 'junk' ) )"""
+
+    if start_date is not None:
+        query += " AND Plane.time_bounds_lower > {} ".format(start_date)
+
+    if end_date is not None:
+        query += " AND Plane.time_bounds_upper < {} ".format(end_date)
+
+    return tap_query(query)
+
+
 class MyPolygon(Polygon.Polygon):
 
     def __init__(self, *args, **kwargs):
@@ -186,7 +206,7 @@ class MyPolygon(Polygon.Polygon):
                     start_date=None,
                     end_date=None):
 
-        query = (" SELECT Observation.observationID as collectionID "
+        query = (" SELECT Observation.observationID as observationID "
                  " FROM caom2.Observation AS Observation "
                  " JOIN caom2.Plane AS Plane "
                  " ON Observation.obsID = Plane.obsID "
@@ -218,19 +238,19 @@ class MyPolygon(Polygon.Polygon):
 
         table = tap_query(query)
         overlaps = []
-        for collectionID in table['collectionID']:
+        for observationID in table['observationID']:
             try:
-                headers = Header(Observation(collectionID))
+                headers = Header(Observation(observationID))
                 for header in headers.headers:
                     if header.get('EXTVER', None) is None:
                         continue
                     headers.ccd = int(header['EXTVER'])
-                    logging.debug("Checking {} {} ".format(collectionID, headers.ccd))
+                    logging.debug("Checking {} {} ".format(observationID, headers.ccd))
                     if headers.polygon.overlaps(self):
-                        logging.debug("{} {} OVERLAPS ".format(collectionID, headers.ccd))
-                        overlaps.append([collectionID, headers.ccd])
+                        logging.debug("{} {} OVERLAPS ".format(observationID, headers.ccd))
+                        overlaps.append([observationID, headers.ccd])
             except Exception as ex:
-                logging.debug("ERROR processing {}: {}".format(collectionID, ex))
+                logging.debug("ERROR processing {}: {}".format(observationID, ex))
                 continue
         logging.debug("Found these overlapping CCDs\n" + str(overlaps))
         return overlaps
@@ -423,6 +443,7 @@ class FitsImage(FitsArtifact):
         self._flat_field = None
         self._footprint = None
         self._polygon = None
+        self._filename = None
     
     @property
     def ccd(self):
@@ -435,6 +456,8 @@ class FitsImage(FitsArtifact):
 
     @property
     def filename(self):
+        if self._filename is not None:
+            return self._filename
         if self.ccd is None:
             return os.path.basename(self.uri)
         return "{}{}{}{:02d}.fits".format(self.prefix,
@@ -448,12 +471,12 @@ class FitsImage(FitsArtifact):
         :return:         The Header of the FITS Extension hold this image.
         :rtype: fits.Header
         """
-        if self.ccd is None:
-            ext = 0
-        else:
-            ext = self.ccd + 1
         if self._header is None:
+            ext = 0
+            if self.ccd is not None:
+               ext = self.ccd + 1
             self._header = Header(self.observation, version=self.version).headers[ext]
+        logging.debug("Sending back header {}".format(self._header))
         return self._header
 
     @property
@@ -540,7 +563,7 @@ class FitsImage(FitsArtifact):
         copy(uri, filename)
         return open(filename).read()
 
-    def cutout(self, cutout, return_file=False):
+    def cutout(self, cutout, return_file=False, convert_to_sip=True):
         """
         Given a string such as '[CCD]', '[CCD][x1:x2,y1:y2]', or '(RA,DEC,RADIUS)', 
          retrieve that portion of the image from VOSpace.
@@ -560,6 +583,14 @@ class FitsImage(FitsArtifact):
         :param return_file
         :return:
         """
+
+        # Don't retrieve file if filename already on disk.
+        if os.access(self.filename, os.F_OK):
+            if return_file:
+                return self.filename
+            else:
+                return fits.open(self.filename)
+
         fpt = tempfile.NamedTemporaryFile(suffix='.fits')
         try:
             copy(self.uri + cutout, fpt.name)
@@ -583,19 +614,32 @@ class FitsImage(FitsArtifact):
         if not hdu_list:
             raise OSError(errno.EFAULT, "Failed to retrieve cutout of image", self.uri)
         for hdu in hdu_list:
-            pv_to_sip(hdu.header)
-        self._header = [None]
-        for hdu in hdu_list:
-            self._header.append(hdu.header)
+            header = deepcopy(hdu.header)
+            if convert_to_sip:
+                try:
+                    pv_to_sip(header)
+                    hdu.header = header
+                except LinAlgError as lin_alg_error:
+                    logging.error("PV_TO_SIP FAILED: {}".format(lin_alg_error))
+                    logging.debug(header)
+
+        if self.ccd is None:
+            self._header = [None]
+            for hdu in hdu_list:
+                self._header.append(hdu.header)
+        else:
+            self._header = hdu.header
 
         if return_file:
             cutout_list = datasec_to_list(cutout)
+            cutout_filename = self.filename
             if len(cutout_list) == 5:
                 cutout_list = cutout_list[1:]
-            cutout_filename = os.path.splitext(self.filename)[0] + "_{}_{}_{}_{}.fits".format(cutout_list[0],
-                                                                                              cutout_list[1],
-                                                                                              cutout_list[2],
-                                                                                              cutout_list[3])
+                cutout_filename = os.path.splitext(self.filename)[0] + "_{}_{}_{}_{}.fits".format(cutout_list[0],
+                                                                                                  cutout_list[1],
+                                                                                                  cutout_list[2],
+                                                                                                  cutout_list[3])
+                self._filename = cutout_filename
             hdu_list.writeto(cutout_filename)
             return cutout_filename
 
@@ -633,7 +677,7 @@ class FitsImage(FitsArtifact):
 
         return FitsImage(obs, ccd=ccd)
 
-    def get(self):
+    def get(self, return_file=False, convert_to_sip=True):
         """
         Retrieves the FitsImage from VOSpace.
         """
@@ -644,9 +688,9 @@ class FitsImage(FitsArtifact):
 
         ccd = "[{}]".format(self.ccd+1)
 
-        return self.cutout(cutout=ccd)
+        return self.cutout(cutout=ccd, return_file=return_file, convert_to_sip=convert_to_sip)
 
-    def ra_dec_cutout(self, skycoord, radius=CUTOUT_RADIUS):
+    def ra_dec_cutout(self, skycoord, radius=CUTOUT_RADIUS, return_file=False, convert_to_sip=True):
         """
         Builds a cutout string from a SkyCoord object and a Quantity object.
         Calls cutout method to retrieve a sub-section of the image at the specified RA/DEC location.
@@ -675,7 +719,7 @@ class FitsImage(FitsArtifact):
         # Formatting coordinates as decimal degrees into a string
         ra_dec = "({},{},{})".format(skycoord.ra.deg, skycoord.dec.deg, radius.to('degree').value)
 
-        return self.cutout(cutout=ra_dec, return_file=False)
+        return self.cutout(cutout=ra_dec, return_file=return_file, convert_to_sip=convert_to_sip)
 
 
 class HPXCatalog(FitsTable):
@@ -1211,7 +1255,7 @@ def list_exposures(proposal_title='cfis'):
     :return:
     """
 
-    query = (" SELECT Observation.sequenceNumber AS expnum, "
+    query = (" SELECT Observation.observationID AS observationID, "
              " COORD1(CENTROID(Plane.position_bounds)) AS RA, "
              " COORD2(CENTROID(Plane.position_bounds)) AS DE "
              " FROM caom2.Observation AS Observation "
