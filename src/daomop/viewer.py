@@ -1,4 +1,3 @@
-import sys
 import logging
 from multiprocessing.dummy import Pool, Lock
 from math import atan2, degrees
@@ -14,6 +13,7 @@ from astropy.wcs import WCS
 
 logging.basicConfig(level=logging.INFO, format="%(module)s.%(funcName)s:%(lineno)s %(message)s")
 DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
+PROCESSES = 5
 
 
 class ValidateGui(ipg.EnhancedCanvasView):
@@ -28,7 +28,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.set_autocut_params('zscale')
 
         self.downloader = downloader.Downloader()
-        self.pool = Pool(processes=5)
+        self.pool = Pool(processes=PROCESSES)
         self.lock = Lock()
         self.image_list = {}
         self.astro_images = {}
@@ -37,6 +37,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.canvas = self.add_canvas()
         self.circle = self.canvas.get_draw_class('circle')
 
+        # TODO: create canvas callbacks for scroll wheel zooming
         # creating key-press event handling
         self.canvas.add_callback('key-press', self._key_press, 'key', self)
 
@@ -69,16 +70,17 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         vbox.add_widget(self.readout, stretch=0)
 
+        # maybe add the scroll wheel callbacks here?
         self.set_callback('cursor-changed', self.motion_cb)
 
         load_candidates = Widgets.TextEntry(editable=False)  # can still edit text area?
         load_candidates.add_callback('activated', lambda x: self.load_candidates(x))
 
         accept = Widgets.Button("Accept")
-        accept.add_callback('activated', lambda x: self.accept())
+        accept.add_callback('activated', lambda x: self.accept_reject())
 
         reject = Widgets.Button("Reject")
-        reject.add_callback('activated', lambda x: self.reject())
+        reject.add_callback('activated', lambda x: self.accept_reject(rejected=True))
 
         wclear = Widgets.Button("Skip")
         wclear.add_callback('activated', lambda x: self.next())
@@ -107,20 +109,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.candidate = self.candidates.next()
         self.load()
 
-    def reject(self):
+    def accept_reject(self, rejected=False):
         """
-        Reject current observation. Write to file and load next set into the viewer
-        """
-        logging.debug("Rejected")
-        self.write_record(rejected=True)
-        self.next()
+        Accept or reject current observation depending on button press. Write to file and load next set into the viewer
 
-    def accept(self):
+        :param rejected: whether the candidate set has been accepted or rejected
         """
-        Accept current observation. Write to file and load next set into the viewer
-        """
-        logging.debug("Accepted")
-        self.write_record()
+        self.write_record(rejected=rejected)
         self.next()
 
     def load_candidates(self, event):
@@ -393,8 +388,7 @@ def main(params):
 
     logger = log.get_logger("daomop", options=params)
 
-    app = Widgets.Application(logger=logger,
-                              host=options.host, port=options.port)
+    app = Widgets.Application(logger=logger, host=params.host, port=params.port)
 
     #  create top level window
     window = app.make_window("Validate 0.2.0", wid='Validate')
@@ -405,32 +399,7 @@ def main(params):
     try:
         app.start()
 
+    # TODO: Add exit button in viewing window that closes everything down
     except KeyboardInterrupt:
         logger.info("Terminating viewer...")
         window.close()
-
-if __name__ == "__main__":
-
-    from optparse import OptionParser
-
-    usage = "usage: %prog [options] cmd [args]"
-    optprs = OptionParser(usage=usage, version='%%prog')
-
-    optprs.add_option("--host", dest="host", metavar="HOST",
-                      default='localhost',
-                      help="Listen on HOST for connections")
-    optprs.add_option("--log", dest="logfile", metavar="FILE",
-                      help="Write logging output to FILE")
-    optprs.add_option("--loglevel", dest="loglevel", metavar="LEVEL",
-                      type='int', default=logging.INFO,
-                      help="Set logging level to LEVEL")
-    optprs.add_option("--port", dest="port", metavar="PORT",
-                      type=int, default=9909,
-                      help="Listen on PORT for connections")
-    optprs.add_option("--stderr", dest="logstderr", default=False,
-                      action="store_true",
-                      help="Copy logging also to stderr")
-
-    (options, args) = optprs.parse_args(sys.argv[1:])
-
-    main(options)
