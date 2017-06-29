@@ -103,7 +103,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Load the next set of images into the viewer
         """
-        logging.info("candidates: ".format(self.candidates))
         self.obs_number = 0
         self.candidate = self.candidates.next()
         self.load()
@@ -112,7 +111,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Reject current observation. Write to file and load next set into the viewer
         """
-        logging.info("Rejected")
+        logging.debug("Rejected")
         self.write_record(rejected=True)
         self.next()
 
@@ -120,7 +119,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Accept current observation. Write to file and load next set into the viewer
         """
-        logging.info("Accepted")
+        logging.debug("Accepted")
         self.write_record()
         self.next()
 
@@ -130,7 +129,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         :param event: Catalogue number containing dataset
         """
-        logging.info("Accepted candidate entry: {}".format(event.text))
+        logging.debug("Accepted candidate entry: {}".format(event.text))
         self.candidates = candidate.CandidateSet(int(event.text))
 
         with self.lock:
@@ -140,35 +139,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
 
         self.candidates = candidate.CandidateSet(int(event.text))
-        logging.info("candidates: {}".format(self.candidates))
         self.load()
-
-    def _key_press(self, canvas, keyname, opn, viewer):
-        """
-        Method called once a keyboard stoke has been detected. Using two un-bound keys, f & g, to cycle different
-         cutout hdu's from the ObsRecord.
-        Parameters canvas, opn, and viewer are all needed for the method to be called even though they are not
-         directly used.
-
-        :param canvas: Ginga DrawingCanvas Object
-        :param keyname: Name of the key that has been pressed
-        :param opn: str "key"
-        :param viewer: Ginga EnhancedCanvasView object
-        """
-        logging.debug("Got key: {} from canvas: {} with opn: {} from viewer: {}".format(canvas, keyname, opn, viewer))
-        if keyname == 'f':
-            self.obs_number -= 1
-
-        elif keyname == 'g':
-            self.obs_number += 1
-
-        else:
-            logging.debug("Unknown keystroke {}".format(keyname))  # keystrokes can be for ginga
-            return
-
-        self.zoom = self.get_zoom()
-        self.obs_number %= len(self.candidate.observations)
-        self._load()
 
     def load(self, obs_number=0):
         """
@@ -219,7 +190,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
             except Exception as ex:
                 logging.error(str(ex))
-                logging.warning("Skipping candidate {} due to load failure".format(self.obs_number))
+                logging.debug("Skipping candidate {} due to load failure".format(self.obs_number))
                 self.next()
 
         if self.zoom is not None:
@@ -295,7 +266,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         x, y = WCS(self.header).all_world2pix(self.center[0], self.center[1], 0)
 
         if not(0 < x < self.get_data_size()[0] and 0 < y < self.get_data_size()[1]):
-            logging.info("Pan out of range: ({}, {}) is greater than half the viewing window.".format(x, y))
+            logging.debug("Pan out of range: ({}, {}) is greater than half the viewing window.".format(x, y))
             return
 
         self.set_pan(x, y)
@@ -313,11 +284,38 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     if rejected:
                         ob.null_observation = True
                     fobj.write(ob.to_string()+'\n')
-            logging.info("Written to file {}".format(self.candidate.observations[0].provisional_name+".ast"))
             art.put()
+            logging.info("Written to file {}".format(self.candidate.observations[0].provisional_name+".ast"))
         except IOError as ex:
             logging.error("Unable to write to file.")
             raise ex
+
+    def _key_press(self, canvas, keyname, opn, viewer):
+        """
+        Method called once a keyboard stoke has been detected. Using two un-bound keys, f & g, to cycle different
+         cutout hdu's from the ObsRecord.
+        Parameters canvas, opn, and viewer are all needed for the method to be called even though they are not
+         directly used.
+
+        :param canvas: Ginga DrawingCanvas Object
+        :param keyname: Name of the key that has been pressed
+        :param opn: str "key"
+        :param viewer: Ginga EnhancedCanvasView object
+        """
+        logging.debug("Got key: {} from canvas: {} with opn: {} from viewer: {}".format(canvas, keyname, opn, viewer))
+        if keyname == 'f':
+            self.obs_number -= 1
+
+        elif keyname == 'g':
+            self.obs_number += 1
+
+        else:
+            logging.debug("Unknown keystroke {}".format(keyname))  # keystrokes can be for ginga
+            return
+
+        self.zoom = self.get_zoom()
+        self.obs_number %= len(self.candidate.observations)
+        self._load()
 
     @property
     def center(self):
@@ -399,7 +397,7 @@ def main(params):
                               host=options.host, port=options.port)
 
     #  create top level window
-    window = app.make_window("Planet Finder v1.0")
+    window = app.make_window("Validate 0.2.0", wid='Validate')
 
     # our own viewer object, customized with methods (see above)
     ValidateGui(logger, window)
@@ -413,7 +411,6 @@ def main(params):
 
 if __name__ == "__main__":
 
-    # Parse command line options with nifty optparse module
     from optparse import OptionParser
 
     usage = "usage: %prog [options] cmd [args]"

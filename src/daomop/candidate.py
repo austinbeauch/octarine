@@ -1,9 +1,11 @@
 import sys
 
-import string
 import storage
 from mp_ephem import ObsRecord, BKOrbit
 from astropy.time import Time
+
+_LETTERS = 'abcdefghijklmnopqrstuvwxyz'
+_DIGITS = '0123456789'
 
 
 def provisional(mjd, hpx, count):
@@ -12,10 +14,10 @@ def provisional(mjd, hpx, count):
     """
     disco = Time(int(mjd), format='mjd').to_datetime()
     yr = disco.year - 2000
-    dy = string.letters[disco.day // 14]
+    dy = _LETTERS[disco.day // 14]
     p1 = count // 36
-    p2 = (string.digits + string.letters)[count - p1 * 36]
-    p1 = (string.digits + string.letters)[p1]
+    p2 = (_DIGITS + _LETTERS)[count - p1 * 36]
+    p1 = (_DIGITS + _LETTERS)[p1]
     return "c{:02}{:1}{:04}{:1}{:1}".format(yr, dy, hpx, p1, p2)
 
 

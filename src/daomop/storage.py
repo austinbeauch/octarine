@@ -346,9 +346,9 @@ class Artifact(object):
     def put(self):
         """Put the artifact to VOSpace."""
         # first ensure the path exists
-        logging.info("Checking that path {} exists".format(self.uri))
+        logging.debug("Checking that path {} exists".format(self.uri))
         make_path(self.uri)
-        logging.info("Copying {} to {}".format(self.filename, self.uri))
+        logging.debug("Copying {} to {}".format(self.filename, self.uri))
         return copy(self.filename, self.uri)
 
     def delete(self):
@@ -1024,7 +1024,7 @@ def mkdir(dirname):
         dir_list.append(dirname)
         dirname = os.path.dirname(dirname)
     while len(dir_list) > 0:
-        logging.info("Creating directory: %s" % (dir_list[-1]))
+        logging.debug("Creating directory: %s" % (dir_list[-1]))
         try:
             vospace.client.mkdir(dir_list.pop())
         except IOError as e:
