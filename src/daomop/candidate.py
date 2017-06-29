@@ -1,8 +1,8 @@
 import sys
 
-import storage
 from mp_ephem import ObsRecord, BKOrbit
 from astropy.time import Time
+from . import storage
 
 _LETTERS = 'abcdefghijklmnopqrstuvwxyz'
 _DIGITS = '0123456789'
