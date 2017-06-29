@@ -130,7 +130,7 @@ def phot(fits_filename, x_in, y_in, aperture=15, sky=20, swidth=10, apcor=0.3,
     magfile = tempfile.NamedTemporaryFile(suffix=".mag", delete=False)
 
     # Close the temp files before sending to IRAF due to docstring:
-    # "Whether the name can be used to open the file a second time, while
+    # "Whether the target_name can be used to open the file a second time, while
     # the named temporary file is still open, varies across platforms"
     coofile.close()
     magfile.close()

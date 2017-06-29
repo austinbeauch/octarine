@@ -402,7 +402,7 @@ class ProcessRealsController(AbstractController):
         After a source has been mark for acceptance create an MPC Observation record.
 
         @param minor_planet_number: The MPC Number associated with the object
-        @param provisional_name: A provisional name associated with the object
+        @param provisional_name: A provisional target_name associated with the object
         @param note1: The observational quality note
         @param note2: The observational circumstance note
         @param date_of_obs: Date of the observation as a Time object.

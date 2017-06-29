@@ -1,28 +1,31 @@
 """Mark the stationary sources in a given source catalog by matching with other source catalogs"""
 import sys
-import errno
-import storage
-import util
 from astropy.io import fits
 from astropy.coordinates import SkyCoord
 from astropy.table import vstack
+from astropy.time import Time
 import numpy
 import argparse
 import logging
 import traceback
 from cadcutils.exceptions import NotFoundException
+from . import storage
+from . import util
+from .params import CFHT_QRUNS
 
 task = "stationary"
 dependency = None
 
 
-def run(pixel, expnum, ccd, prefix, version, dry_run, force):
+def run(pixel, expnum, ccd, prefix, version, dry_run, force, qrunid, catalog_dirname=storage.CATALOG):
     """
     Retrieve the catalog from VOSspace, find the matching dataset_name/ccd combos and match against those.
 
     :param pixel: Which HPX Pixel should we build a catalog for.
     :param ccd: chip to retrieve for matching
     :param expnum: exposure number to retrieve for match
+    :param qrunid: CFHT QRun to make stationary catalogs for.
+    :param catalog_dirname: base name of the catalog to store data to.
     :param force:
     :param dry_run:
     :param version:
@@ -35,6 +38,7 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force):
         return
 
     with storage.LoggingManager(task, str(expnum), expnum, ccd, version, dry_run):
+        storage.set_status(task, prefix, expnum, version, ccd=ccd, status='started')
         try:
             if dependency is not None and not storage.get_status(dependency, prefix, 
                                                                  expnum, "p", ccd=ccd):
@@ -44,8 +48,10 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force):
             logging.info("Getting fits image from VOSpace")
 
             logging.info("Running match on %s %d" % (expnum, ccd))
-            catalog = match(pixel, expnum, ccd)
-            split_to_hpx(pixel, catalog)
+            catalog = match(pixel, expnum, ccd, qrunid)
+            catalog_dirname = "{}/{}".format(catalog_dirname, qrunid)
+            storage.mkdir("{}/{}".format(storage.DBIMAGES, catalog_dirname))
+            split_to_hpx(pixel, catalog, catalog_dir=catalog_dirname)
 
             if dry_run:
                 return
@@ -61,17 +67,13 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force):
         storage.set_status(task, prefix, expnum, version, ccd=ccd, status=message)
 
 
-def split_to_hpx(pixel, catalog):
-
+def split_to_hpx(pixel, catalog, catalog_dir=None):
     dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
-    image = storage.FitsImage(catalog.observation, ccd=catalog.ccd, version=catalog.version)
-    catalog.table['dataset_name'] = len(catalog.table)*[dataset_name]
-    catalog.table['mid_mjdate'] = image.header['MJDATE'] + image.header['EXPTIME']/24./3600.0
-    catalog.table['exptime'] = image.header['EXPTIME']
-
+    
     pix = pixel
+    logging.info("merging {} into HPX catalog stored at {}".format(catalog, catalog_dir))
     try:
-        healpix_catalog = storage.HPXCatalog(pixel=pix)
+        healpix_catalog = storage.HPXCatalog(pixel=pix, catalog_dir=catalog_dir)
         healpix_catalog.get()
         healpix_catalog.table = healpix_catalog.table[healpix_catalog.table['dataset_name'] != dataset_name]
         healpix_catalog.table = vstack([healpix_catalog.table, catalog.table[catalog.table['HEALPIX'] == pix]])
@@ -84,13 +86,17 @@ def split_to_hpx(pixel, catalog):
     healpix_catalog.put()
 
 
-def match(pixel, expnum, ccd):
+def match(pixel, expnum, ccd, qrunid):
 
     observation = storage.Observation(expnum)
-    image = storage.FitsImage(observation, ccd=ccd)
-    datasec = storage.datasec_to_list(image.header['DATASEC'])
 
     catalog = storage.FitsTable(observation, ccd=ccd, ext='.cat.fits')
+    dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
+    image = storage.FitsImage(catalog.observation, ccd=catalog.ccd, version=catalog.version)
+    catalog.table['dataset_name'] = len(catalog.table)*[dataset_name]
+    catalog.table['mid_mjdate'] = image.header['MJDATE'] + image.header['EXPTIME']/24./3600.0
+    catalog.table['exptime'] = image.header['EXPTIME']
+
     # First match against the HPX catalogs (if they exist)
     ra_dec = SkyCoord(catalog.table['X_WORLD'],
                       catalog.table['Y_WORLD'],
@@ -103,6 +109,7 @@ def match(pixel, expnum, ccd):
     else:
         flux_radius_lim = numpy.median(catalog.table['FLUX_RADIUS'][catalog.table['MAGERR_AUTO'] < 0.002])
 
+    datasec = storage.datasec_to_list(image.header['DATASEC'])
     trim_condition = numpy.all((catalog.table['X_IMAGE'] > datasec[0],
                                 catalog.table['X_IMAGE'] < datasec[1],
                                 catalog.table['Y_IMAGE'] > datasec[2],
@@ -113,7 +120,9 @@ def match(pixel, expnum, ccd):
     catalog.table = catalog.table[trim_condition]
     match_list = image.polygon.cone_search(runids=storage.RUNIDS,
                                            minimum_time=2.0/24.0,
-                                           mjdate=image.header.get('MJDATE', None))
+                                           mjdate=image.header.get('MJDATE', None),
+                                           start_date=CFHT_QRUNS[qrunid][0].mjd,
+                                           end_date=CFHT_QRUNS[qrunid][1].mjd)
 
     # First match against the HPX catalogs (if they exist)
     # reshape the position vectors from the catalogues for use in match_lists
@@ -124,8 +133,12 @@ def match(pixel, expnum, ccd):
     catalog.table['HPXID'] = -1
     healpix = pixel
 
-    hpx_cat = storage.HPXCatalog(pixel=healpix)
+    master_catalog_dirname = "catalogs/master"
+    storage.mkdir("{}/{}".format(storage.DBIMAGES, master_catalog_dirname))
+
+    hpx_cat = storage.HPXCatalog(pixel=healpix, catalog_dir=master_catalog_dirname)
     hpx_cat_len = 0
+
     try:
         hpx_cat.get()
         p2 = numpy.transpose((hpx_cat.table['X_WORLD'],
@@ -139,10 +152,12 @@ def match(pixel, expnum, ccd):
     # for all non-matched sources in this healpix we increment the counter.
     cond = numpy.all((catalog.table['HPXID'] < 0,
                       catalog.table['HEALPIX'] == healpix), axis=0)
-    catalog.table['HPXID'][cond] = [hpx_cat_len + numpy.arange(cond.sum()), ]
-
+    catalog.table['HPXID'][cond] = hpx_cat_len + numpy.arange(cond.sum())
     catalog.table['MATCHES'] = 0
     catalog.table['OVERLAPS'] = 0
+    # Now append these new source (cond) to the end of the master catalog.
+    split_to_hpx(pixel, catalog, catalog_dir=master_catalog_dirname)
+
     for match_set in match_list:
         logging.info("trying to match against catalog {}p{:02d}.cat.fits".format(match_set[0], match_set[1]))
         try:
@@ -203,6 +218,7 @@ def main():
                         action="store_true")
     parser.add_argument("--debug", "-d",
                         action="store_true")
+    parser.add_argument("qrunid", help="The CFHT QRUN to build stationary catalogs for.")
 
     cmd_line = " ".join(sys.argv)
     args = parser.parse_args()
@@ -211,7 +227,6 @@ def main():
     logging.info("Started {}".format(cmd_line))
 
     storage.DBIMAGES = args.dbimages
-    storage.CATALOG = args.catalogs
     prefix = ''
     version = 'p'
 
@@ -220,7 +235,7 @@ def main():
     for overlap in overlaps:
         expnum = overlap[0]
         ccd = overlap[1]
-        run(args.healpix, expnum, ccd, prefix, version, args.dry_run, args.force)
+        run(args.healpix, expnum, ccd, prefix, version, args.dry_run, args.force, args.qrunid, args.catalogs)
     return exit_code
 
 

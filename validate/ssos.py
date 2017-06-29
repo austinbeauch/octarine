@@ -44,7 +44,7 @@ class TracksParser(object):
         logger.debug("Parsing SSOS Query.")
         mpc_observations = mpc.MPCReader(filename).mpc_observations
 
-        # pass down the provisional name so the table lines are linked to this TNO
+        # pass down the provisional target_name so the table lines are linked to this TNO
         self.ssos_parser = SSOSParser(mpc_observations[0].provisional_name,
                                       input_observations=mpc_observations,
                                       skip_previous=self.skip_previous)
@@ -181,7 +181,7 @@ class TrackTarget(TracksParser):
         with open(target_name) as f:
             self.target_name = f.read().strip()
 
-        # pass down the provisional name so the table lines are linked to this TNO
+        # pass down the provisional target_name so the table lines are linked to this TNO
         self.ssos_parser = SSOSParser(self.target_name,
                                       input_observations=None,
                                       skip_previous=False)
@@ -191,7 +191,7 @@ class TrackTarget(TracksParser):
     def query_ssos(self, target_name, lunation_count=None):
         """Send a query to the SSOS web service, looking for available observations using the given track.
 
-        :param target_name: name of target to query against SSOIS db
+        :param target_name: target_name of target to query against SSOIS db
         :param lunation_count: ignored
         :rtype: SSOSData
         """
@@ -249,7 +249,7 @@ class SSOSParser(object):
     def __init__(self, provisional_name, input_observations=None, skip_previous=False):
         """
         setup the parser.
-        :param provisional_name: name of KBO to assign SSOS data to
+        :param provisional_name: target_name of KBO to assign SSOS data to
         :param input_observations: input observations used in search
         """
         if input_observations is None:

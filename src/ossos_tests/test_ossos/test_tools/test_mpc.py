@@ -652,7 +652,7 @@ class TestMPCReader(unittest.TestCase):
 
     def test_correctly_formatted_long_provisional_name(self):
         """
-        Make sure we get the provisional name in the correct starting column.
+        Make sure we get the provisional target_name in the correct starting column.
         :return:
         """
         reader = mpc.MPCReader()

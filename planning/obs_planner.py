@@ -217,11 +217,11 @@ class Plot(Canvas):
         self.tk_focusFollowsMouse()
 
     def load_objects(self, directory_name=None):
-        """Load the targets from a file.
+        """Load the mjdates from a file.
 
         """
-        # for name in Neptune:
-        #     self.kbos[name] = Neptune[name]
+        # for target_name in Neptune:
+        #     self.kbos[target_name] = Neptune[target_name]
 
         if directory_name is not None:
             # defaults to looking at .ast files only
@@ -235,7 +235,7 @@ class Plot(Canvas):
                 self.kbos[kbo.name] = kbo.orbit
                 self.kbos[kbo.name].mag = kbo.mag
                 # else:
-                #     print("Arc very short, large uncertainty. Skipping {} for now.\n".format(kbo.name))
+                #     print("Arc very short, large uncertainty. Skipping {} for now.\n".format(kbo.target_name))
 
         self.doplot()
 
@@ -638,7 +638,7 @@ class Plot(Canvas):
                 d = line.split()
                 points.append((d[8], d[2], d[3]))
         else:
-            # ## try name/ ra /dec / epoch
+            # ## try target_name/ ra /dec / epoch
             for line in lines:
                 d = line.split()
                 if len(d) == 5:  # brave assumption time!
@@ -927,7 +927,7 @@ class Plot(Canvas):
                     ra = kbo.coordinate.ra
                     dec = kbo.coordinate.dec
                     if kbo_name in name:
-                        print "{} matches pointing {} by name, adding to field.".format(kbo_name, name)
+                        print "{} matches pointing {} by target_name, adding to field.".format(kbo_name, name)
                         field_kbos.append(kbo)
                         center_ra += ra.radian
                         center_dec += dec.radian
@@ -939,7 +939,7 @@ class Plot(Canvas):
                                 center_ra += ra.radian
                                 center_dec += dec.radian
 
-                # logging.critical("KBOs in field {0}: {1}".format(name, ', '.join([n.name for n in field_kbos])))
+                # logging.critical("KBOs in field {0}: {1}".format(target_name, ', '.join([n.target_name for n in field_kbos])))
 
                 today = start_date
                 while today < end_date:
@@ -991,20 +991,20 @@ class Plot(Canvas):
 <NAME>Fixed Targets</NAME>
 <TITLE>Fixed Targets for CFHT QSO</TITLE>
 <!-- Definition of each field -->
-<FIELD name="NAME" datatype="A" width="20">
+<FIELD target_name="NAME" datatype="A" width="20">
    <DESCRIPTION>Name of target</DESCRIPTION>
 </FIELD>
-<FIELD name="RA" ref="" datatype="A" width="11" unit="&quot;h:m:s&quot;">
+<FIELD target_name="RA" ref="" datatype="A" width="11" unit="&quot;h:m:s&quot;">
    <DESCRIPTION>Right ascension of target</DESCRIPTION>
 </FIELD>     
-<FIELD name="DEC" ref="" datatype="A" width="11" unit="&quot;d:m:s&quot;">
+<FIELD target_name="DEC" ref="" datatype="A" width="11" unit="&quot;d:m:s&quot;">
    <DESCRIPTION>Declination of target</DESCRIPTION>
 </FIELD>     
-<FIELD name="EPOCH" datatype="F" width="6">
+<FIELD target_name="EPOCH" datatype="F" width="6">
     <DESCRIPTION>Epoch of coordinates</DESCRIPTION>
 </FIELD>     
-<FIELD name="POINT" datatype="A" width="5">
-<DESCRIPTION>Pointing name</DESCRIPTION>
+<FIELD target_name="POINT" datatype="A" width="5">
+<DESCRIPTION>Pointing target_name</DESCRIPTION>
 </FIELD>     
 <!-- Data table --> 
 <DATA><CSV headlines="4" colsep="|"><![CDATA[
@@ -1151,7 +1151,7 @@ NAME                |RA         |DEC        |EPOCH |POINT|
                 ra = kbos[name]['RA']
                 dec = kbos[name]['DEC']
                 w.create_point(ra, dec, size=4, color='cyan')
-                w.label(ra, dec, name[-2:], offset=[-15, +15])  # truncate object name for plot clutter clarity
+                w.label(ra, dec, name[-2:], offset=[-15, +15])  # truncate object target_name for plot clutter clarity
 
         vlist.sort()
         for v in vlist:

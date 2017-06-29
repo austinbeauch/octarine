@@ -1,17 +1,16 @@
 import argparse
 import sys
 import logging
-import util
 import errno
-
-import storage
-from storage import archive_url
-from storage import Observation
-from storage import FitsImage, Header
-from storage import make_path
-from storage import make_link
-from storage import pitcairn_uri
-from storage import isfile
+from . import util
+from . import storage
+from .storage import archive_url
+from .storage import Observation
+from .storage import FitsImage, Header
+from .storage import make_path
+from .storage import make_link
+from .storage import pitcairn_uri
+from .storage import isfile
 
 
 def run(dataset_name):

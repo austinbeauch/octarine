@@ -42,7 +42,7 @@ def main():
     parser.add_argument("--debug",
                         action="store_true",
                         help="wx inspection tool will be launched.")
-    parser.add_argument("--name-filter",
+    parser.add_argument("--target_name-filter",
                         dest="name_filter",
                         help="A filter to apply to object names when loading from a directory.")
     parser.add_argument("--skip-previous", action="store_true",

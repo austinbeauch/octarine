@@ -16,13 +16,13 @@ example_file="""<?xml version="1.0" ?>
       <NAME>Ephemeris</NAME>
       <TITLE>Ephemeris for CFHT QSO target Test</TITLE>
       <!--Definition of each field-->
-      <FIELD datatype="A" format="YYYY-MM-DD hh:mm:ss" name="DATE_UTC" width="19">
+      <FIELD datatype="A" format="YYYY-MM-DD hh:mm:ss" target_name="DATE_UTC" width="19">
         <DESCRIPTION>UTC Date</DESCRIPTION>
       </FIELD>
-      <FIELD datatype="A" format="RAh:RAm:RAs" name="RA_J2000" unit="h" width="11">
+      <FIELD datatype="A" format="RAh:RAm:RAs" target_name="RA_J2000" unit="h" width="11">
         <DESCRIPTION>Right ascension of target</DESCRIPTION>
       </FIELD>
-      <FIELD datatype="A" format="DEd:DEm:DEs" name="DEC_J2000" unit="deg" width="11">
+      <FIELD datatype="A" format="DEd:DEm:DEs" target_name="DEC_J2000" unit="deg" width="11">
         <DESCRIPTION>Declination of target</DESCRIPTION>
       </FIELD>
       <!--Data table-->
@@ -43,7 +43,7 @@ YYYY-MM-DD hh:mm:ss|RAh:RAm:RAs|DEd:DEm:DEs|
 class TestEphemTarget(TestCase):
 
     def test_create(self):
-        """Make sure we can build an object with just a name."""
+        """Make sure we can build an object with just a target_name."""
         target_name = "test"
         et = ephem_target.EphemTarget(target_name)
         self.assertIn(target_name, et.name)

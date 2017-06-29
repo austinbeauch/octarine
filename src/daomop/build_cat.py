@@ -6,8 +6,9 @@ import logging
 import os
 import subprocess
 import sys
-import storage
-import util
+import traceback
+from . import storage
+from . import util
 
 task = 'build_cat'
 dependency = None
@@ -15,6 +16,7 @@ dependency = None
 __PATH__ = os.path.dirname(__file__)
 SEX_CONFIG = os.path.join(__PATH__, 'config')
 os.environ['SEX_CONFIG'] = SEX_CONFIG
+
 
 def run(expnum, ccd, version, prefix, dry_run, force):
 
@@ -31,14 +33,19 @@ def run(expnum, ccd, version, prefix, dry_run, force):
 
             observation = storage.Observation(expnum)
             image = storage.FitsImage(observation, ccd=ccd)
-            image.get()
-            image.flat_field.get()
+            image.get(return_file=True, convert_to_sip=False)
+            image.flat_field.get(return_file=True, convert_to_sip=False)
 
             # Build the PSF model input catalog
             logging.info("Building PSF input catalog")
             logging.info("Using config: {}".format(os.path.join(SEX_CONFIG, 'pre_psfex.sex')))
             ldac_catalog = storage.Artifact(observation, ccd=ccd, ext=".ldac")
-            cmd = ['/usr/bin/sex', image.filename,
+            sex_cmd = 'sex'
+            for filename in ['/opt/local/bin/sex', '/usr/bin/sex', '/usr/local/bin/sex']:
+                if os.access(filename, os.X_OK):
+                    sex_cmd = filename
+                    break
+            cmd = [sex_cmd, image.filename,
                    '-c', os.path.join(SEX_CONFIG, 'pre_psfex.sex'),
                    '-CATALOG_NAME', ldac_catalog.filename,
                    '-WEIGHT_IMAGE', image.flat_field.filename,
@@ -56,7 +63,7 @@ def run(expnum, ccd, version, prefix, dry_run, force):
             # Build a source catalog using the PSF model.
             fits_catalog = storage.Artifact(observation, ccd=ccd, ext=".cat.fits")
             psf = storage.Artifact(observation, ccd=ccd, ext=".psf")
-            cmd = ['/usr/bin/sex',
+            cmd = [sex_cmd,
                    '-c', os.path.join(SEX_CONFIG, 'ml.sex'),
                    '-WEIGHT_IMAGE', image.flat_field.filename,
                    '-CATALOG_NAME', fits_catalog.filename,
@@ -75,6 +82,7 @@ def run(expnum, ccd, version, prefix, dry_run, force):
             logging.info(message)
 
         except Exception as e:
+            logging.debug(traceback.format_exc())
             logging.error(str(e))
             message = str(e)
 

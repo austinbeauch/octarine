@@ -12,13 +12,13 @@ class Program(object):
     def __init__(self, runid="16BP06", pi_login="gladman"):
         self.config = {"runid": runid,
                        "pi_login": pi_login,
-                       "program_configuration": {"targets": [],
+                       "program_configuration": {"mjdates": [],
                                                  "observing_blocks": [],
                                                  "observing_groups": []
                                                  }}
 
     def add_target(self, target):
-        self.config["program_configuration"]["targets"].append(target)
+        self.config["program_configuration"]["mjdates"].append(target)
 
     def add_observing_block(self, observing_block):
         self.config["program_configuration"]["observing_blocks"].append(observing_block)
@@ -70,10 +70,10 @@ class ObservingGroup(object):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('ogname')
-    parser.add_argument('targets', nargs='+')
+    parser.add_argument('mjdates', nargs='+')
     args = parser.parse_args()
 
-    # Break the targets into OBs based on their max mag of source in pointing.
+    # Break the mjdates into OBs based on their max mag of source in pointing.
     cuts = numpy.array([23.0, 23.5, 24.0, 24.5, 25.0, 25.5, 26.0, 30.0])
     IC_exptimes = [50,  100,  200,  300,  400,  500,  600, 700]
 
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     ob_tokens = []
     mags = {}
     ob_coordinate = {}
-    for filename in args.targets:
+    for filename in args.mjdates:
         target = Target(filename)
         program.add_target(target.config)
         ob_token = "OB-{}-{}".format(target.token, target.mag)

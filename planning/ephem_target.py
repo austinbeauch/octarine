@@ -35,7 +35,7 @@ class EphemTarget(object):
         """
         create an ephmeris target, either with a 'orbfit' object or some mean rate of motion.
 
-        :param name: a string containing the name of the target.
+        :param name: a string containing the target_name of the target.
         """
 
         self.name = str(name)
@@ -74,7 +74,7 @@ class EphemTarget(object):
 
         for fieldName in self.field_names:
             field = self.doc.createElement("FIELD")
-            field.setAttribute("name", fieldName)
+            field.setAttribute("target_name", fieldName)
             for (key, value) in fields[fieldName]['attr'].iteritems():
                 field.setAttribute(key, value)
             description = self.doc.createElement("DESCRIPTION")
@@ -167,7 +167,7 @@ class EphemTarget(object):
                                      "mag": coordinate.mag,
                                      "coordinate": this_coordinate})
         target = {"identifier": {"client_token": "{}-{}-{}".format(self.runid, self.qrunid, self.name)},
-                  "name": self.name,
+                  "target_name": self.name,
                   "moving_target": {"ephemeris_points": ephemeris_points}}
         json.dump(target, f_handle)
         return
@@ -243,9 +243,9 @@ GEMINI_HEADER="""***************************************************************
 *******************************************************************************
 Ephemeris / WWW_USER Wed Oct 31 17:11:34 2012 Pasadena, USA      / Horizons    
 *******************************************************************************
-Target body name: Titan (606)                     {source: SAT351}
-Center body name: Earth (399)                     {source: DE405}
-Center-site name: Mauna Kea
+Target body target_name: Titan (606)                     {source: SAT351}
+Center body target_name: Earth (399)                     {source: DE405}
+Center-site target_name: Mauna Kea
 *******************************************************************************
 Start time      : A.D. 2012-Nov-01 00:00:00.0000 UT      
 Stop  time      : A.D. 2013-Nov-01 00:00:00.0000 UT      

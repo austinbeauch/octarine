@@ -189,7 +189,7 @@ class SourceValidationDialog(wx.Dialog):
 class AcceptSourceDialog(SourceValidationDialog):
     TITLE = "Accept Source"
     MINOR_PLANET_NUMBER = "Minor planet number: "
-    PROVISIONAL_NAME = "Provisional name: "
+    PROVISIONAL_NAME = "Provisional target_name: "
     NOTE1 = "Note 1: "
     NOTE2 = "Note 2: "
     DATE_OF_OBS = "Date of observation: "

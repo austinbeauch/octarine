@@ -11,7 +11,7 @@ from ossos.gui.views.validation import SourceValidationDialog, AcceptSourceDialo
 
 # Constants used for test data
 TEST_MINOR_PLANET_NUMBER = "mpn01"
-TEST_PROVISIONAL_NAME = "provisional-name-1"
+TEST_PROVISIONAL_NAME = "provisional-target_name-1"
 TEST_DISCOVERY_AST = "*"
 TEST_NOTE1 = "A"
 TEST_NOTE2 = "B"

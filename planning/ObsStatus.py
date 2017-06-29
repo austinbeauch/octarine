@@ -87,7 +87,7 @@ def create_ascii_table(obsTable, outfile):
     Store the result in outfile (could/should be a vospace dataNode)
 
     obsTable: astropy.votable.array object
-    outfile: str (name of the vospace dataNode to store the result to)
+    outfile: str (target_name of the vospace dataNode to store the result to)
 
     """
 

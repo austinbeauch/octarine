@@ -19,7 +19,7 @@ from .planning.ephem_target import EphemTarget
 def create_ephemeris_file(name, camera, kbos, orbits, pointing_date, qrunid):
     """
 
-    @param name: name of the pointing
+    @param name: target_name of the pointing
     @param camera: camera object that is this pointing
     @param kbos: list of kbos covered by this pointing
     @param orbits: orbits of all known kbos
@@ -95,8 +95,8 @@ def optimize(orbits, required, locations, tokens):
     search_order.extend(range(len(Camera.names)))
     print search_order
 
-    # For each required target find the pointing that will include the largest number of other required targets
-    # and then tweak that specific pointing to include the maximum number of secondary targets.
+    # For each required target find the pointing that will include the largest number of other required mjdates
+    # and then tweak that specific pointing to include the maximum number of secondary mjdates.
     for token in token_order:
         if token in covered:
             continue
@@ -127,7 +127,7 @@ def optimize(orbits, required, locations, tokens):
         if len(this_required) == 1:
             best_coverage = [token]
         else:
-            logging.debug("Maximizing inclusion of required targets")
+            logging.debug("Maximizing inclusion of required mjdates")
             for idx in search_order:
                 pointing.offset(index=idx)
                 this_coverage = []
@@ -146,7 +146,7 @@ def optimize(orbits, required, locations, tokens):
         # best_coverage is the list of sources (tokens) that this pointing covered.
         # now move around the best_pointing, keeping all the objects listed in best_coverage but maximizing the
         # number of other sources that get coverage (optimal_coverage)
-        logging.info("{} pointing these {} required targets: {}".format(token, len(best_coverage), best_coverage))
+        logging.info("{} pointing these {} required mjdates: {}".format(token, len(best_coverage), best_coverage))
         max_sources_in_pointing = 0
         optimal_coverage = []
         optimal_pointing = None
@@ -194,7 +194,7 @@ def optimize(orbits, required, locations, tokens):
             if this_token not in covered:
                 new_required.append(this_token)
                 n += 1
-        logging.info("Remaining required targets: {}, targets covered: {}".format(n, len(covered)))
+        logging.info("Remaining required mjdates: {}, mjdates covered: {}".format(n, len(covered)))
         required = new_required
     return optimal_pointings
 
@@ -209,7 +209,7 @@ def main():
                         help="Name of file that contains list of objects to try and observe.")
     parser.add_argument('required_objects',
                         type=str,
-                        help="name of file that contains a list of required objects")
+                        help="target_name of file that contains a list of required objects")
     parser.add_argument('--nattempts', type=int,
                         help="Number of random variations of pointings to try",
                         default=2)
@@ -226,7 +226,7 @@ def main():
     pointing_date = args.date
 
     logging.info("Date for orbit predictions: {}".format(args.date))
-    logging.info("Building pointings that include all targets in {}".format(args.required_objects))
+    logging.info("Building pointings that include all mjdates in {}".format(args.required_objects))
     logging.info("Optimized to include as many objects in {} as possible".format(args.pointing_objects))
 
     required_objects = []

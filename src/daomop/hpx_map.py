@@ -7,10 +7,11 @@ from matplotlib import pyplot
 import os
 import sys
 import re
-import storage
-import util 
 import logging
 import argparse
+
+from . import storage
+from . import util 
 
 def run(healpix, min_matches=0, max_matches=10, min_overlaps=0, max_overlaps=10, dry_run=False):
     """

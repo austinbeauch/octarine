@@ -6,7 +6,7 @@ from astropy.table import Table
 from numpy import random
 from scipy import interpolate
 
-import daomop.storage
+from . import storage
 
 
 class MatchFile(object):
