@@ -7,9 +7,10 @@ import os
 import stat
 from vos import Client
 from . import storage
-from .params import CFHT_QRUNS
+from .params import qrunid_end_date, qrunid_start_date
 
-def get_bad_explist():
+
+def bad_exposure_list():
     """
     Retreieve the list of bad exposrures from S. Gwyn's VOSpace listing.
     
@@ -17,7 +18,7 @@ def get_bad_explist():
      :rtype list
     """
 
-    Client().copy('vos:sgwyn/tkBAD', 'tkBAD')
+    Client().copy(u'vos:sgwyn/tkBAD', u'tkBAD')
 
     bad_expnum_list = []
     for lines in open('tkBAD').readlines():
@@ -48,11 +49,14 @@ def create_build_cat(qrunid, force=False, job_filename="build_cat_job.in", comma
     """
     Create a CANFAR job file to run the build_cat script on all available CFIS 'r' band data.
     
-    :param command_filename: name of the command the will run build_cat on th VM in CANFAR. 
+    :param command_filename: name of the command the will run build_cat on th VM in CANFAR.
+     :param qrunid:  qrun are we building catalog for.
+     :param force: compute catalog even if previously successful.
+     :param job_filename:
     :return: name of the job submission file and the build_cat command file.
     """
     command_filename = create_build_cat_command(command_filename)
-    bad_expnum_list = get_bad_explist()
+    bad_expnum_list = bad_exposure_list()
     force = force and " --force " or ""
 
     with open(job_filename, 'w') as fout:
@@ -61,10 +65,10 @@ def create_build_cat(qrunid, force=False, job_filename="build_cat_job.in", comma
         fout.write("""when_to_transfer_output = ON_EXIT_OR_EVICT\n""")
         fout.write("""RunAsOwner = True\n""")
         fout.write("""transfer_output_files = /dev/null\n\n""")
-        fout.write("Executeable = {}\n".format(command_filename))
+        fout.write("Executable = {}\n".format(command_filename))
 
-        for row in storage.get_cfis_exposure_table(start_date=CFHT_QRUNS[qrunid][0].mjd,
-                                                   end_date=CFHT_QRUNS[qrunid][1].mjd):
+        for row in storage.get_cfis_exposure_table(start_date=qrunid_start_date(qrunid),
+                                                   end_date=qrunid_end_date(qrunid)):
             if row['observationID'] in bad_expnum_list:
                 continue
             fout.write("Arguments = {} {}\n".format(row['observationID'], force))
@@ -101,6 +105,7 @@ def create_stationary_job(qrunid, force=False, job_filename="stationary_job.in",
     :param qrunid: Which qrunid should this stationary catalog be for
     :param force: build stationary catalogs even for images that are marked as completed.
     :param job_filename: Name of the executable script that will be run.
+    :param command_filename: name of file that will hold the executable command.
     :return:
     """
     command_filename = create_stationary_command(command_filename)
