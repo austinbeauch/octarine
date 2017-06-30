@@ -19,7 +19,7 @@ def qrunid_start_date(qrunid):
     :return: start date of QRUN
     :rtype: Time
     """
-    return CFHT_QRUNS.get(qrunid, CFHT_QRUNS['default'])[0]
+    return CFHT_QRUNS.get(qrunid, CFHT_QRUNS['default'])[0].mjd
 
 
 def qrunid_end_date(qrunid):
@@ -29,4 +29,4 @@ def qrunid_end_date(qrunid):
     :return: end date of QRUN
     :rtype: Time
     """
-    return CFHT_QRUNS.get(qrunid, CFHT_QRUNS['default'])[1]
+    return CFHT_QRUNS.get(qrunid, CFHT_QRUNS['default'])[1].mjd
