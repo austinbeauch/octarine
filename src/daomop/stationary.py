@@ -3,28 +3,27 @@ import sys
 from astropy.io import fits
 from astropy.coordinates import SkyCoord
 from astropy.table import vstack
-from astropy.time import Time
 import numpy
 import argparse
 import logging
 import traceback
 from cadcutils.exceptions import NotFoundException
+
 from . import storage
 from . import util
-from .params import CFHT_QRUNS
+from .params import qrunid_end_date, qrunid_start_date
 
 task = "stationary"
 dependency = None
 
 
-def run(pixel, expnum, ccd, prefix, version, dry_run, force, qrunid, catalog_dirname=storage.CATALOG):
+def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=storage.CATALOG):
     """
     Retrieve the catalog from VOSspace, find the matching dataset_name/ccd combos and match against those.
 
     :param pixel: Which HPX Pixel should we build a catalog for.
     :param ccd: chip to retrieve for matching
     :param expnum: exposure number to retrieve for match
-    :param qrunid: CFHT QRun to make stationary catalogs for.
     :param catalog_dirname: base name of the catalog to store data to.
     :param force:
     :param dry_run:
@@ -48,8 +47,7 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, qrunid, catalog_dir
             logging.info("Getting fits image from VOSpace")
 
             logging.info("Running match on %s %d" % (expnum, ccd))
-            catalog = match(pixel, expnum, ccd, qrunid)
-            catalog_dirname = "{}/{}".format(catalog_dirname, qrunid)
+            catalog = match(pixel, expnum, ccd)
             storage.mkdir("{}/{}".format(storage.DBIMAGES, catalog_dirname))
             split_to_hpx(pixel, catalog, catalog_dir=catalog_dirname)
 
@@ -86,7 +84,7 @@ def split_to_hpx(pixel, catalog, catalog_dir=None):
     healpix_catalog.put()
 
 
-def match(pixel, expnum, ccd, qrunid):
+def match(pixel, expnum, ccd):
 
     observation = storage.Observation(expnum)
 
@@ -120,9 +118,7 @@ def match(pixel, expnum, ccd, qrunid):
     catalog.table = catalog.table[trim_condition]
     match_list = image.polygon.cone_search(runids=storage.RUNIDS,
                                            minimum_time=2.0/24.0,
-                                           mjdate=image.header.get('MJDATE', None),
-                                           start_date=CFHT_QRUNS[qrunid][0].mjd,
-                                           end_date=CFHT_QRUNS[qrunid][1].mjd)
+                                           mjdate=image.header.get('MJDATE', None))
 
     # First match against the HPX catalogs (if they exist)
     # reshape the position vectors from the catalogues for use in match_lists
@@ -231,11 +227,14 @@ def main():
     version = 'p'
 
     exit_code = 0
-    overlaps = storage.MyPolygon.from_healpix(args.healpix).cone_search(runids=storage.RUNIDS)
+    overlaps = storage.MyPolygon.from_healpix(args.healpix).cone_search(runids=storage.RUNIDS,
+                                                                        start_date=qrunid_start_date(args.qrunid),
+                                                                        end_date=qrunid_end_date(args.qrunid))
+    catalog_dirname = "{}/{}".format(args.catalogs, args.qrunid)
     for overlap in overlaps:
         expnum = overlap[0]
         ccd = overlap[1]
-        run(args.healpix, expnum, ccd, prefix, version, args.dry_run, args.force, args.qrunid, args.catalogs)
+        run(args.healpix, expnum, ccd, prefix, version, args.dry_run, args.force, catalog_dirname)
     return exit_code
 
 
