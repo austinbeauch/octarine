@@ -17,6 +17,10 @@ task = "stationary"
 dependency = "build_cat"
 
 
+class DependencyError(Exception):
+    pass
+
+
 def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=storage.CATALOG):
     """
     Retrieve the catalog from VOSspace, find the matching dataset_name/ccd combos and match against those.
@@ -41,8 +45,11 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=sto
     with storage.LoggingManager(task, str(expnum), expnum, ccd, version, dry_run):
         hpx_catalog.tag(task_tag, 'started')
         try:
-            if storage.get_status(dependency, prefix, expnum, "p", ccd=ccd):
-                raise IOError("{} not yet run for {}".format(dependency, expnum))
+            # Skip dependency check.
+            # cat_image = storage.FitsImage(storage.Observation(expnum), ccd=ccd)
+            # dependency_tag = "{}_{}{:02d}".format(dependency, version, ccd)
+            # if not cat_image.complete(dependency_tag):
+            #    raise IOError("{} not yet run for {}".format(dependency, expnum))
 
             # get catalog from the vospace storage area
             logging.info("Getting fits image from VOSpace")
@@ -144,6 +151,7 @@ def match(pixel, expnum, ccd):
         catalog.table['HPXID'][idx2.data[~idx2.mask]] = hpx_cat.table['HPXID'][~idx2.mask]
         hpx_cat_len = len(hpx_cat.table)
     except NotFoundException:
+        logging.warning("Load of {} failed  at start.".format(hpx_cat.uri))
         pass
 
     # for all non-matched sources in this healpix we increment the counter.
@@ -161,6 +169,10 @@ def match(pixel, expnum, ccd):
             match_catalog = storage.FitsTable(storage.Observation(match_set[0]), ccd=match_set[1], ext='.cat.fits')
             match_image = storage.FitsImage(storage.Observation(match_set[0]), ccd=match_set[1])
             datasec = storage.datasec_to_list(match_image.header['DATASEC'])
+            # Skip dependency check.
+            # dependency_tag = "{}_{}{:02d}".format(dependency, match_image.version, ccd)
+            # if not match_image.complete(dependency_tag):
+            #     raise DependencyError("{} not yet run for {}".format(dependency_tag, match_set))
 
             npts = numpy.sum([match_catalog.table['MAGERR_AUTO'] < 0.002])
             if npts < 10:
@@ -186,7 +198,10 @@ def match(pixel, expnum, ccd):
             catalog.table['OVERLAPS'] += \
                 [match_image.polygon.isInside(row['X_WORLD'], row['Y_WORLD']) for row in catalog.table]
         except NotFoundException:
+            logging.error("Missing image: {}".format(match_set))
             pass
+        except DependencyError as ex:
+            logging.error(str(ex))
 
     return catalog
 
