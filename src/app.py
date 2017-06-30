@@ -30,6 +30,6 @@ if __name__ == "__main__":
 
     if options.debug:
         import pdb
-        pdb.run('main(options)')
+        pdb.run('daomop.viewer.main(options)')
 
     daomop.viewer.main(options)

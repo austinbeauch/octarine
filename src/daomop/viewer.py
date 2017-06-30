@@ -1,3 +1,4 @@
+import sys
 import logging
 from multiprocessing.dummy import Pool, Lock
 from math import atan2, degrees
@@ -61,6 +62,12 @@ class ValidateGui(ipg.EnhancedCanvasView):
         Tested and working in Mozilla Firefox and Google Chrome web browsers.
         :param container: ginga.web.pgw.Widgets.TopLevel object
         """
+        bd = self.get_bindings()
+        bd.enable_all(True)
+
+        # add little mode indicator that shows keyboard modal states
+        self.show_mode_indicator(True, corner='ur')
+
         vbox = Widgets.VBox()
         vbox.set_border_width(2)
         vbox.set_spacing(1)
@@ -82,15 +89,19 @@ class ValidateGui(ipg.EnhancedCanvasView):
         reject = Widgets.Button("Reject")
         reject.add_callback('activated', lambda x: self.accept_reject(rejected=True))
 
-        wclear = Widgets.Button("Skip")
-        wclear.add_callback('activated', lambda x: self.next())
+        skip = Widgets.Button("Skip")
+        skip.add_callback('activated', lambda x: self.next())
+
+        stop = Widgets.Button("Quit")
+        stop.add_callback('activated', lambda x: self.exit())
 
         hbox = Widgets.HBox()
         h2box = Widgets.HBox()
         h2box.add_widget(accept, stretch=0)
         h2box.add_widget(reject, stretch=0)
-        h2box.add_widget(wclear, stretch=0)
+        h2box.add_widget(skip, stretch=0)
         h2box.add_widget(load_candidates, stretch=1)
+        h2box.add_widget(stop)
         h2box.set_spacing(7)
         vbox.add_widget(h2box, stretch=1)
 
@@ -117,6 +128,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         self.write_record(rejected=rejected)
         self.next()
+
+    def exit(self):
+        self.readout.set_text("Shutting down application.")
+        self.logger.info("Attempting to shut down the application...")
+        if self.top is not None:
+            self.top.close()
+        sys.exit()
 
     def load_candidates(self, event):
         """
