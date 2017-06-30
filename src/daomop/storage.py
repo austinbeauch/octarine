@@ -299,6 +299,8 @@ class Artifact(object):
         self._version = version
         self._prefix = prefix
         self._hdulist = None
+        self.fpt = None
+        self._filename = None
 
     @property
     def subdir(self):
@@ -372,14 +374,26 @@ class Artifact(object):
     def put(self):
         """Put the artifact to VOSpace."""
         # first ensure the path exists
-        logging.info("Checking that path {} exists".format(self.uri))
+        logging.debug("Checking that path {} exists".format(self.uri))
         make_path(self.uri)
-        logging.info("Copying {} to {}".format(self.filename, self.uri))
+        logging.debug("Copying {} to {}".format(self.filename, self.uri))
         return copy(self.filename, self.uri)
 
     def delete(self):
         """Delete a file from VOSpace"""
         delete(self.uri)
+
+
+class TemporaryArtifact(Artifact):
+
+    @property
+    def filename(self):
+
+        if self._filename is None:
+            self.fpt = tempfile.NamedTemporaryFile(suffix=self.ext)
+            self._filename = self.fpt.name
+
+        return self._filename
 
 
 class FitsArtifact(Artifact):
@@ -722,6 +736,13 @@ class FitsImage(FitsArtifact):
         return self.cutout(cutout=ra_dec, return_file=return_file, convert_to_sip=convert_to_sip)
 
 
+class ASTRecord(TemporaryArtifact):
+    def __init__(self, provisional_name, ext='.ast', *args, **kwargs):
+        dbimages = os.path.join(os.path.dirname(DBIMAGES), CATALOG)
+        obs = Observation(provisional_name, dbimages=dbimages)
+        super(ASTRecord, self).__init__(obs, ext=ext, *args, **kwargs)
+
+
 class HPXCatalog(FitsTable):
 
     def __init__(self, pixel, nside=None, catalog_dir=None, **kwargs):
@@ -1057,7 +1078,7 @@ def mkdir(dirname):
         dir_list.append(dirname)
         dirname = os.path.dirname(dirname)
     while len(dir_list) > 0:
-        logging.info("Creating directory: %s" % (dir_list[-1]))
+        logging.debug("Creating directory: %s" % (dir_list[-1]))
         try:
             vospace.client.mkdir(dir_list.pop())
         except IOError as e:
@@ -1307,42 +1328,3 @@ def tap_query(query):
     except Exception as ex:
         logging.error(str(ex))
         raise ex
-
-
-class Downloader(object):
-    def __init__(self):
-        self._downloaded_images = dict()
-
-    @staticmethod
-    def image_key(obs_record):
-        """
-
-        :param obs_record: the observation record to get the key for.
-        :type obs_record: mp_ephem.ObsRecord
-        :return: the key for the given observation record.
-        """
-        return obs_record.comment.frame + obs_record.provisional_name
-
-    def get(self, obs_record):
-        if self.image_key(obs_record) not in self._downloaded_images:
-            self._downloaded_images[self.image_key(obs_record)] = self.get_hdu(obs_record)
-        return self._downloaded_images[self.image_key(obs_record)]
-
-    def get_hdu(self, obs_record):
-        """
-        Retrieve a fits image associated with a given obs_record and return the HDU off the assocaited cutout.
-
-        :param obs_record: the ObsRecord for which the image is to be retrieved
-        :type obs_record: mp_ephem.ObsRecord
-        :return: fits.ImageHDU
-        """
-        logging.info("Retrieving {}".format(self.image_key(obs_record)))
-        try:
-            image = FitsImage.from_frame(obs_record.comment.frame)
-            hdu = image.ra_dec_cutout(obs_record.coordinate)[-1]
-        except Exception as ex:
-            logging.info(ex)
-            raise ex
-
-        logging.info("Got {}".format(hdu))
-        return hdu

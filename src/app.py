@@ -1,20 +1,35 @@
-from daomop import viewer, candidate
-from daomop import storage
-import logging
+"""Validation application. Runs locally at http://localhost:9909/app"""
 import sys
+import daomop.viewer
 
 
-def run(pixel):
-    storage.DBIMAGES = 'vos:cfis/solar_system/dbimages'
-    downloader = storage.Downloader()
-    with viewer.WebServerFactory() as web_server:
-        gui = web_server.get_viewer("validate")
-        viewer.ImageViewer(gui, downloader)
+if __name__ == "__main__":
 
-        v1 = viewer.ValidateGui(web_server.get_viewer('Validate'), candidates, downloader)
+    from optparse import OptionParser
 
+    usage = "usage: %prog [options] cmd [args]"
+    optprs = OptionParser(usage=usage, version='%%prog')
+    optprs.add_option("--debug", dest="debug", default=False, action="store_true",
+                      help="Enter the pdb debugger on main()")
+    optprs.add_option("--host", dest="host", metavar="HOST",
+                      default='localhost',
+                      help="Listen on HOST for connections")
+    optprs.add_option("--log", dest="logfile", metavar="FILE",
+                      help="Write logging output to FILE")
+    optprs.add_option("--loglevel", dest="loglevel", metavar="LEVEL",
+                      type='int', default=daomop.viewer.logging.INFO,
+                      help="Set logging level to LEVEL")
+    optprs.add_option("--port", dest="port", metavar="PORT",
+                      type=int, default=9909,
+                      help="Listen on PORT for connections")
+    optprs.add_option("--stderr", dest="logstderr", default=False,
+                      action="store_true",
+                      help="Copy logging also to stderr")
 
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    run(int(sys.argv[1]))
+    (options, args) = optprs.parse_args(sys.argv[1:])
 
+    if options.debug:
+        import pdb
+        pdb.run('main(options)')
+
+    daomop.viewer.main(options)
