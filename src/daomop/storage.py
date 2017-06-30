@@ -384,7 +384,7 @@ class Artifact(object):
         delete(self.uri)
 
 
-class TemporaryArticaft(Artifact):
+class TemporaryArtifact(Artifact):
 
     @property
     def filename(self):
@@ -736,7 +736,7 @@ class FitsImage(FitsArtifact):
         return self.cutout(cutout=ra_dec, return_file=return_file, convert_to_sip=convert_to_sip)
 
 
-class ASTRecord(TemporaryArticaft):
+class ASTRecord(TemporaryArtifact):
     def __init__(self, provisional_name, ext='.ast', *args, **kwargs):
         dbimages = os.path.join(os.path.dirname(DBIMAGES), CATALOG)
         obs = Observation(provisional_name, dbimages=dbimages)
