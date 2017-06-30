@@ -14,7 +14,7 @@ from . import util
 from .params import qrunid_end_date, qrunid_start_date
 
 task = "stationary"
-dependency = None
+dependency = "build_cat"
 
 
 def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=storage.CATALOG):
@@ -32,15 +32,16 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=sto
     """
     message = storage.SUCCESS
 
-    if storage.get_status(task, prefix, expnum, version=version, ccd=ccd) and not force:
+    hpx_catalog = storage.HPXCatalog(pixel, catalog_dir=catalog_dirname)
+    task_tag = "{}_{}_{}".format(task, expnum, ccd)
+    if hpx_catalog.complete(task_tag) and not force:
         logging.info("{} completed successfully for {} {} {} {}".format(task, prefix, expnum, version, ccd))
         return
 
     with storage.LoggingManager(task, str(expnum), expnum, ccd, version, dry_run):
-        storage.set_status(task, prefix, expnum, version, ccd=ccd, status='started')
+        hpx_catalog.tag(task_tag, 'started')
         try:
-            if dependency is not None and not storage.get_status(dependency, prefix, 
-                                                                 expnum, "p", ccd=ccd):
+            if storage.get_status(dependency, prefix, expnum, "p", ccd=ccd):
                 raise IOError("{} not yet run for {}".format(dependency, expnum))
 
             # get catalog from the vospace storage area
@@ -62,7 +63,7 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=sto
             message = str(e)
             logging.error(message)
 
-        storage.set_status(task, prefix, expnum, version, ccd=ccd, status=message)
+        hpx_catalog.tag(task_tag, message)
 
 
 def split_to_hpx(pixel, catalog, catalog_dir=None):

@@ -381,6 +381,34 @@ class Artifact(object):
         """Delete a file from VOSpace"""
         delete(self.uri)
 
+    def tag(self, key, value=None):
+        """
+        Set or get the value of a TAG set on this artificat
+        :param key: tag uri
+        :param value: value to set tag to (or None if read only), value="" deletes tag
+        :return: value
+        :rtype: basestring
+        """
+        self.node = vospace.client.get_node(self.uri)
+        self.tags = self.node.props
+        key = tag_uri(key)
+        if value is None:
+            return self.tags.get(key, None)
+        self.tags[key] = value
+        vospace.client.add_props(self.node)
+        self.node = vospace.client.get_node(self.uri, force=True)
+        return self.tags[tag_uri(key)]
+
+    def complete(self, task, value=None):
+        """
+        Get the processing status action of a particular task on this artifact
+        :param task: name of processing task
+        :return: status
+        :rtype: basestring
+        """
+        return self.tag(task, value)==SUCCESS
+
+
 
 class FitsArtifact(Artifact):
 
