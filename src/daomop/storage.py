@@ -404,14 +404,15 @@ class Artifact(object):
 
     def status(self, task, expnum, version, ccd, status=None):
         key = "{}_{}_{}{}{:02d}".format(task, self.observation.dataset_name, expnum, version, ccd)
-        node = vospace.client.get_node(os.path.dirname(self.uri))
+        uri = os.path.dirname(self.uri)
+        node = vospace.client.get_node(uri)
         tags = node.props
         key = tag_uri(key)
         if status is None:
             return tags.get(key, None) == SUCCESS
         tags[key] = status
         vospace.client.add_props(node)
-        vospace.client.get_node(self.uri, force=True)
+        vospace.client.get_node(uri, force=True)
         return tags[tag_uri(key)] == SUCCESS
 
 
