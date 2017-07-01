@@ -21,6 +21,24 @@ class DependencyError(Exception):
     pass
 
 
+def completed(pixel, expnum, version, ccd, catalog_dir):
+    """
+    Examine an HPX catalog and determine if the source catlog associated to expnum/ccd combo is already present.
+
+    :param pixel: the HealPix of the catalog to check.
+    :param expnum: exposure number of the single image being checked for membership
+    :param version: processing version, normally 'p'
+    :param ccd: ccd being checked
+    :param catalog_dir: directory on VOSpace containing the HealPix catalog.
+    :return:
+    """
+    observation = storage.Observation(expnum)
+    catalog = storage.FitsTable(observation, version=version, ccd=ccd, ext='.cat.fits')
+    dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
+    hpx_catalog = storage.HPXCatalog(pixel, catalog_dir=catalog_dir)
+    return dataset_name in hpx_catalog.table['dataset_name']
+
+
 def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=storage.CATALOG):
     """
     Retrieve the catalog from VOSspace, find the matching dataset_name/ccd combos and match against those.
@@ -36,13 +54,11 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=sto
     """
     message = storage.SUCCESS
 
-    hpx_catalog = storage.HPXCatalog(pixel, catalog_dir=catalog_dirname)
-    if hpx_catalog.status(task, expnum, version, ccd) and not force:
+    if completed(pixel, expnum, version, ccd, catalog_dirname) and not force:
         logging.info("{} completed successfully for {} {} {} {}".format(task, prefix, expnum, version, ccd))
         return
 
     with storage.LoggingManager(task, str(expnum), expnum, ccd, version, dry_run):
-        hpx_catalog.status(task, expnum, version, ccd, 'started')
         try:
             # get catalog from the vospace storage area
             logging.info("Getting fits image from VOSpace")
@@ -62,8 +78,6 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=sto
             logging.debug(type(e))
             message = str(e)
             logging.error(message)
-
-        hpx_catalog.status(task, expnum, version, ccd, message)
 
 
 def split_to_hpx(pixel, catalog, catalog_dir=None):
