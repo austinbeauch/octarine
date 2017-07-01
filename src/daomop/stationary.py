@@ -37,20 +37,13 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=sto
     message = storage.SUCCESS
 
     hpx_catalog = storage.HPXCatalog(pixel, catalog_dir=catalog_dirname)
-    task_tag = "{}_{}_{}".format(task, expnum, ccd)
-    if hpx_catalog.complete(task_tag) and not force:
+    if hpx_catalog.status(task, expnum, version, ccd) and not force:
         logging.info("{} completed successfully for {} {} {} {}".format(task, prefix, expnum, version, ccd))
         return
 
     with storage.LoggingManager(task, str(expnum), expnum, ccd, version, dry_run):
-        hpx_catalog.tag(task_tag, 'started')
+        hpx_catalog.status(task, expnum, version, ccd, 'started')
         try:
-            # Skip dependency check.
-            # cat_image = storage.FitsImage(storage.Observation(expnum), ccd=ccd)
-            # dependency_tag = "{}_{}{:02d}".format(dependency, version, ccd)
-            # if not cat_image.complete(dependency_tag):
-            #    raise IOError("{} not yet run for {}".format(dependency, expnum))
-
             # get catalog from the vospace storage area
             logging.info("Getting fits image from VOSpace")
 
@@ -70,7 +63,7 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=sto
             message = str(e)
             logging.error(message)
 
-        hpx_catalog.tag(task_tag, message)
+        hpx_catalog.status(task, expnum, version, ccd, message)
 
 
 def split_to_hpx(pixel, catalog, catalog_dir=None):
@@ -169,11 +162,6 @@ def match(pixel, expnum, ccd):
             match_catalog = storage.FitsTable(storage.Observation(match_set[0]), ccd=match_set[1], ext='.cat.fits')
             match_image = storage.FitsImage(storage.Observation(match_set[0]), ccd=match_set[1])
             datasec = storage.datasec_to_list(match_image.header['DATASEC'])
-            # Skip dependency check.
-            # dependency_tag = "{}_{}{:02d}".format(dependency, match_image.version, ccd)
-            # if not match_image.complete(dependency_tag):
-            #     raise DependencyError("{} not yet run for {}".format(dependency_tag, match_set))
-
             npts = numpy.sum([match_catalog.table['MAGERR_AUTO'] < 0.002])
             if npts < 10:
                 flux_radius_lim = 1.8
