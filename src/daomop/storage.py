@@ -403,8 +403,8 @@ class Artifact(object):
         return tags[tag_uri(key)]
 
     def status(self, task, expnum, version, ccd, status=None):
-        key = "{}_{}_{}{}{:02d}".format(task, self.pixel, expnum, version, ccd)
-        node = vospace.client.get_node(os.path.basename(self.uri))
+        key = "{}_{}_{}{}{:02d}".format(task, self.observation.dataset_name, expnum, version, ccd)
+        node = vospace.client.get_node(os.path.dirname(self.uri))
         tags = node.props
         key = tag_uri(key)
         if status is None:
