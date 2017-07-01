@@ -402,8 +402,8 @@ class Artifact(object):
         vospace.client.get_node(self.uri, force=True)
         return tags[tag_uri(key)]
 
-    def status(self, task, expnum, version, ccd, status=None):
-        key = "{}_{}_{}{}{:02d}".format(task, self.observation.dataset_name, expnum, version, ccd)
+    def status(self, task, status=None):
+        key = "{}__{}{:02d}".format(task, self.version, self.ccd)
         uri = os.path.dirname(self.uri)
         node = vospace.client.get_node(uri)
         tags = node.props

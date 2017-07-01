@@ -23,7 +23,7 @@ def run(expnum, ccd, version, prefix, dry_run, force):
 
     observation = storage.Observation(expnum)
     image = storage.FitsImage(observation, ccd=ccd)
-    if image.complete("{}_{}{:02d}".format(task, version, ccd)):
+    if image.status(task) and not force:
         logging.info("{} completed successfully for {} {} {} {}".format(task, prefix, expnum, version, ccd))
         return
 
@@ -82,7 +82,7 @@ def run(expnum, ccd, version, prefix, dry_run, force):
             logging.error(str(e))
             message = str(e)
 
-    image.tag("{}_{}{:02d}".format(task, version, ccd), message)
+    image.status(task, message)
 
     return
 
