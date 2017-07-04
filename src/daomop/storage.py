@@ -620,10 +620,10 @@ class FitsImage(FitsArtifact):
         hdu_list = fits.open(fpt, scale_back=False)
         hdu_list.verify('silentfix+ignore')
 
-        # hdu_list[1].header['DATASEC'] = reset_datasec(cutout,
-        #                                               hdu_list[1].header['DATASEC'],
-        #                                               hdu_list[1].header['NAXIS1'],
-        #                                               hdu_list[1].header['NAXIS2'])
+        # hdu_list[0].header['DATASEC'] = reset_datasec(cutout,
+        #                                               hdu_list[0].header['DATASEC'],
+        #                                               hdu_list[0].header['NAXIS1'],
+        #                                               hdu_list[0].header['NAXIS2'])
 
         if not hdu_list:
             raise OSError(errno.EFAULT, "Failed to retrieve cutout of image", self.uri)

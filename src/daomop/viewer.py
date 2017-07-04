@@ -22,6 +22,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
     def __init__(self, logger, window, bindings=None):
         super(ValidateGui, self).__init__(logger=logger, bindings=bindings)
 
+        self.console_box = Widgets.TextArea(editable=False)
+        self.console_streamer = logging.StreamHandler(stream=self.console_box.append_text)
+
         self.logger = logger
         self.top = window
 
@@ -38,7 +41,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.canvas = self.add_canvas()
         self.circle = self.canvas.get_draw_class('circle')
 
-        # TODO: create canvas callbacks for scroll wheel zooming
         # creating key-press event handling
         self.canvas.add_callback('key-press', self._key_press, 'key', self)
 
@@ -51,36 +53,34 @@ class ValidateGui(ipg.EnhancedCanvasView):
         # GUI elements
         self.pixel_base = 1.0
         self.readout = Widgets.Label("")
-        self.header_box = Widgets.TextArea(wrap=True, editable=True)
-
+        self.header_box = Widgets.TextArea(editable=False)
         self.build_gui(self.top)
 
     def build_gui(self, container):
         """
-        Building the GUI to be displayed in an HTML5 canvas. Currently consists of three buttons, a text entry box,
-         and a text area.
+        Building the GUI to be displayed in an HTML5 canvas.
         Tested and working in Mozilla Firefox and Google Chrome web browsers.
+
         :param container: ginga.web.pgw.Widgets.TopLevel object
         """
         bd = self.get_bindings()
         bd.enable_all(True)
 
-        # add little mode indicator that shows keyboard modal states
+        # indicator
         self.show_mode_indicator(True, corner='ur')
 
-        vbox = Widgets.VBox()
-        vbox.set_border_width(2)
-        vbox.set_spacing(1)
+        viewer_vbox = Widgets.VBox()  # box containing the viewer down to the buttons
+        viewer_vbox.set_border_width(2)
+        viewer_vbox.set_spacing(1)
 
         w = Viewers.GingaViewerWidget(viewer=self)
-        vbox.add_widget(w, stretch=1)
+        viewer_vbox.add_widget(w, stretch=1)
 
-        vbox.add_widget(self.readout, stretch=0)
+        viewer_vbox.add_widget(self.readout, stretch=0)
 
-        # maybe add the scroll wheel callbacks here?
         self.set_callback('cursor-changed', self.motion_cb)
 
-        load_candidates = Widgets.TextEntry(editable=False)  # can still edit text area?
+        load_candidates = Widgets.TextEntry()
         load_candidates.add_callback('activated', lambda x: self.load_candidates(x))
 
         accept = Widgets.Button("Accept")
@@ -89,36 +89,58 @@ class ValidateGui(ipg.EnhancedCanvasView):
         reject = Widgets.Button("Reject")
         reject.add_callback('activated', lambda x: self.accept_reject(rejected=True))
 
-        skip = Widgets.Button("Skip")
-        skip.add_callback('activated', lambda x: self.next())
+        next_set = Widgets.Button("Next")
+        next_set.add_callback('activated', lambda x: self.next())
 
-        stop = Widgets.Button("Quit")
-        stop.add_callback('activated', lambda x: self.exit())
+        previous_set = Widgets.Button("Previous")
+        previous_set.add_callback('activated', lambda x: self.previous())
 
-        hbox = Widgets.HBox()
-        h2box = Widgets.HBox()
-        h2box.add_widget(accept, stretch=0)
-        h2box.add_widget(reject, stretch=0)
-        h2box.add_widget(skip, stretch=0)
-        h2box.add_widget(load_candidates, stretch=1)
-        h2box.add_widget(stop)
-        h2box.set_spacing(7)
-        vbox.add_widget(h2box, stretch=1)
+        quit_button = Widgets.Button("Quit")
+        quit_button.add_callback('activated', lambda x: self.exit())
 
-        # need to put this in an hbox with an expanding label or the
-        # browser wants to resize the canvas, distorting it
-        hbox.add_widget(vbox, stretch=0)
-        hbox.add_widget(Widgets.Label(''), stretch=1)
-        hbox.add_widget(self.header_box)
-        container.set_widget(hbox)
+        buttons_hbox = Widgets.HBox()  # line of buttons below viewer window
+        buttons_hbox.add_widget(accept)
+        buttons_hbox.add_widget(reject)
+        buttons_hbox.add_widget(previous_set)
+        buttons_hbox.add_widget(next_set)
+        buttons_hbox.add_widget(load_candidates)
+        buttons_hbox.set_spacing(7)
+        viewer_vbox.add_widget(buttons_hbox)
+
+        viewer_header_hbox = Widgets.HBox()  # box containing the viewer/buttons and rightmost text area
+        viewer_header_hbox.add_widget(viewer_vbox)
+        viewer_header_hbox.add_widget(Widgets.Label(''))
+        viewer_header_hbox.add_widget(self.header_box)
+
+        full_vbox = Widgets.VBox()  # vbox container for all elements
+        full_vbox.add_widget(viewer_header_hbox)
+        full_vbox.add_widget(self.console_box)
+
+        quit_box = Widgets.HBox()  # add a quit button to the bottom of the container
+        quit_box.add_widget(quit_button)
+        full_vbox.add_widget(quit_box)
+
+        self.console_box.set_text("Logging output:" + '\n')
+
+        container.set_widget(full_vbox)
 
     def next(self):
         """
         Load the next set of images into the viewer
         """
-        self.obs_number = 0
-        self.candidate = self.candidates.next()
-        self.load()
+        if self.candidates is not None:
+            self.obs_number = 0
+            self.candidate = self.candidates.next()
+            self.load()
+
+    def previous(self):
+        """
+        Load the previous set of images into the viewer
+        """
+        if self.candidates is not None:
+            self.obs_number = 0
+            self.candidate = self.candidates.previous()
+            self.load()
 
     def accept_reject(self, rejected=False):
         """
@@ -126,8 +148,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         :param rejected: whether the candidate set has been accepted or rejected
         """
-        self.write_record(rejected=rejected)
-        self.next()
+        if self.candidates is not None:
+            self.write_record(rejected=rejected)
+            self.next()
 
     def exit(self):
         self.readout.set_text("Shutting down application.")
@@ -217,8 +240,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self._mark_aperture()
 
         self.header_box.set_text(self.info)
-        self.onscreen_message("Loaded: {}"
-                              .format(self.candidate.observations[self.obs_number].comment.frame), delay=0.5)
+        self.onscreen_message("Loaded: {}".format(self.candidate.observations[self.obs_number].comment.frame),
+                              delay=0.5)
 
     def _mark_aperture(self):
         """
@@ -296,6 +319,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 for ob in self.candidate.observations:
                     if rejected:
                         ob.null_observation = True
+                    print ob.to_string()
                     fobj.write(ob.to_string()+'\n')
             art.put()
             logging.info("Written to file {}".format(self.candidate.observations[0].provisional_name+".ast"))
@@ -315,16 +339,15 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :param opn: str "key"
         :param viewer: Ginga EnhancedCanvasView object
         """
-        logging.debug("Got key: {} from canvas: {} with opn: {} from viewer: {}".format(canvas, keyname, opn, viewer))
+        self.logger.info("Got key: {} from canvas: {} with opn: {} from viewer: {}".format(canvas,
+                                                                                           keyname,
+                                                                                           opn,
+                                                                                           viewer))
         if keyname == 'f':
             self.obs_number -= 1
 
         elif keyname == 'g':
             self.obs_number += 1
-
-        else:
-            logging.debug("Unknown keystroke {}".format(keyname))  # keystrokes can be for ginga
-            return
 
         self.zoom = self.get_zoom()
         self.obs_number %= len(self.candidate.observations)
@@ -406,6 +429,20 @@ def main(params):
 
     logger = log.get_logger("daomop", options=params)
 
+    if params.use_opencv:
+        from ginga import trcalc
+        try:
+            trcalc.use('opencv')
+        except Exception as ex:
+            logger.warning("Error using OpenCL: {}".format(ex))
+
+    if params.use_opencl:
+        from ginga import trcalc
+        try:
+            trcalc.use('opencl')
+        except Exception as ex:
+            logger.warning("Error using OpenCL: {}".format(ex))
+
     app = Widgets.Application(logger=logger, host=params.host, port=params.port)
 
     #  create top level window
@@ -417,7 +454,6 @@ def main(params):
     try:
         app.start()
 
-    # TODO: Add exit button in viewing window that closes everything down
     except KeyboardInterrupt:
         logger.info("Terminating viewer...")
         window.close()

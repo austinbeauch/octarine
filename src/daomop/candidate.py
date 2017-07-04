@@ -79,6 +79,13 @@ class Target(object):
         return ObservationSet(self.provisional_name,
                               self.record[self.observation_sets[self.current_observation]])
 
+    def previous(self):
+        if self.current_observation == 0:
+            return
+        self.current_observation -= 1
+        return ObservationSet(self.provisional_name,
+                              self.record[self.observation_sets[self.current_observation]])
+
 
 class Catalog(object):
     def __init__(self, pixel):
@@ -96,6 +103,13 @@ class Catalog(object):
         self.current_target += 1
         if not self.current_target < len(self.mjdates):
             raise StopIteration
+        mjdate = self.mjdates[self.current_target]
+        return Target(self.catalog.pixel, mjdate, self.catalog.json[mjdate])
+
+    def previous(self):
+        if self.current_target == 0:
+            return
+        self.current_target -= 1
         mjdate = self.mjdates[self.current_target]
         return Target(self.catalog.pixel, mjdate, self.catalog.json[mjdate])
 
@@ -120,6 +134,16 @@ class CandidateSet(object):
             self.target = self.catalog.next()
             return self.next()
 
+    def previous(self):
+        try:
+            observation_set = self.target.previous()
+            obs = []
+            # noinspection PyTypeChecker
+            for ob in observation_set:
+                obs.append(ob)
+            return BKOrbit(obs)
+        except StopIteration:
+            raise StopIteration
 
 if __name__ == "__main__":
     print sys.argv
