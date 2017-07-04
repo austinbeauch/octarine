@@ -23,6 +23,7 @@ import vospace
 from wcs import WCS
 
 # Try and turn off warnings, only works for some releases of requests.
+# noinspection PyBroadException
 try:
     requests.packages.urllib3.disable_warnings()
     requests_log = logging.getLogger("requests.packages.urllib3")
@@ -164,7 +165,7 @@ class Task(object):
 
 def get_cfis_exposure_table(start_date=None, end_date=None):
 
-    query  = """SELECT Observation.observationID AS "observationID" """
+    query = """SELECT Observation.observationID AS "observationID" """
     query += """FROM caom2.Plane AS Plane JOIN caom2.Observation AS Observation ON Plane.obsID = Observation.obsID """
     query += """WHERE  ( Plane.calibrationLevel = '1' AND Plane.energy_bandpassName IN ( 'r.MP9602','r.MP9601' ) """
     query += """AND Observation.instrument_name = 'MegaPrime' """
@@ -383,6 +384,37 @@ class Artifact(object):
         """Delete a file from VOSpace"""
         delete(self.uri)
 
+    def tag(self, key, value=None):
+        """
+        Set or get the value of a TAG set on this artificat
+        :param key: tag uri
+        :param value: value to set tag to (or None if read only), value="" deletes tag
+        :return: value
+        :rtype: basestring
+        """
+        node = vospace.client.get_node(self.uri)
+        tags = node.props
+        key = tag_uri(key)
+        if value is None:
+            return tags.get(key, None)
+        tags[key] = value
+        vospace.client.add_props(node)
+        vospace.client.get_node(self.uri, force=True)
+        return tags[tag_uri(key)]
+
+    def status(self, task, status=None):
+        key = "{}__{}{:02d}".format(task, self.version, self.ccd)
+        uri = os.path.dirname(self.uri)
+        node = vospace.client.get_node(uri)
+        tags = node.props
+        key = tag_uri(key)
+        if status is None:
+            return tags.get(key, None) == SUCCESS
+        tags[key] = status
+        vospace.client.add_props(node)
+        vospace.client.get_node(uri, force=True)
+        return tags[tag_uri(key)] == SUCCESS
+
 
 class TemporaryArtifact(Artifact):
 
@@ -482,13 +514,13 @@ class FitsImage(FitsArtifact):
     @property
     def header(self):
         """
-        :return:         The Header of the FITS Extension hold this image.
+        :return: The Header of the FITS Extension hold this image.
         :rtype: fits.Header
         """
         if self._header is None:
             ext = 0
             if self.ccd is not None:
-               ext = self.ccd + 1
+                ext = self.ccd + 1
             self._header = Header(self.observation, version=self.version).headers[ext]
         logging.debug("Sending back header {}".format(self._header))
         return self._header
@@ -544,6 +576,7 @@ class FitsImage(FitsArtifact):
     @property
     def flat_field(self):
         """
+        The FlatField image used by PitCarin to process this image. Uses flat_field_name
 
         :rtype: FitsImage
         """
@@ -557,6 +590,11 @@ class FitsImage(FitsArtifact):
 
     @property
     def flat_field_name(self):
+        """
+        Looks up the flat_field_name using the header keywords 'FLAT', defaults to 'weight.fits'
+        
+        :return: 
+        """
 
         if self._flat_field_name is not None:
             return self._flat_field_name
@@ -594,6 +632,7 @@ class FitsImage(FitsArtifact):
          and a radius of 0.0166666666667 degrees (the default amount, which is set to one arcminute - 1/60 of a degree) 
                 
         :param cutout: a string specifying which part of the exposure to return
+        :param convert_to_sip: Should we convert the header keywords to SIP format?
         :param return_file
         :return:
         """
@@ -638,11 +677,12 @@ class FitsImage(FitsArtifact):
                     logging.debug(header)
 
         if self.ccd is None:
+            # build a list of CCD headers as we didn't do a CCD based cutout so need an MEF of headers.
             self._header = [None]
             for hdu in hdu_list:
                 self._header.append(hdu.header)
         else:
-            self._header = hdu.header
+            self._header = hdu_list[0].header
 
         if return_file:
             cutout_list = datasec_to_list(cutout)
@@ -716,6 +756,8 @@ class FitsImage(FitsArtifact):
          in the cutout.
         
         :param skycoord: SkyCoord object with associated RA and DEC attributes
+        :param return_file: what to return? True: filename,  False: HDUList
+        :param convert_to_sip: convert header PV keywords to SIP version? 
         :param radius: astropy unit.Quantity object. Specifies radius of the cutout returned from VOSpace
         """
 
@@ -968,6 +1010,9 @@ def reset_datasec(cutout, datasec, naxis1, naxis2):
 
     if cutout is None or cutout == "[*,*]":
         return datasec
+
+    # Try to convert just the datasec to a list.
+    # noinspection PyBroadException
     try:
         datasec = datasec_to_list(datasec)
     except:
@@ -980,6 +1025,7 @@ def reset_datasec(cutout, datasec, naxis1, naxis2):
     cutout = cutout.replace("[*,", "[1:{},".format(naxis1))
     cutout = cutout.replace(",*]", ",1:{}]".format(naxis1))
 
+    # noinspection PyBroadException
     try:
         cutout = datasec_to_list(cutout)
     except:
@@ -1039,7 +1085,7 @@ class Header(FitsImage):
         if not os.access(self.filename, os.R_OK):
             self.get()
 
-        header_str_list = re.split('END      \n', open(self.filename, 'r').read())
+        header_str_list = re.split('END {6}\n', open(self.filename, 'r').read())
 
         # make the first entry in the list a Null
         _headers = []

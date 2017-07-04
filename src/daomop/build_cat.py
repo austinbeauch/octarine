@@ -11,7 +11,6 @@ from . import storage
 from . import util
 
 task = 'build_cat'
-dependency = None
 
 __PATH__ = os.path.dirname(__file__)
 SEX_CONFIG = os.path.join(__PATH__, 'config')
@@ -22,17 +21,14 @@ def run(expnum, ccd, version, prefix, dry_run, force):
 
     message = storage.SUCCESS
 
-    if storage.get_status(task, prefix, expnum, version=version, ccd=ccd) and not force:
+    observation = storage.Observation(expnum)
+    image = storage.FitsImage(observation, ccd=ccd)
+    if image.status(task) and not force:
         logging.info("{} completed successfully for {} {} {} {}".format(task, prefix, expnum, version, ccd))
         return
 
     with storage.LoggingManager(task, prefix, expnum, ccd, version, dry_run):
         try:
-            if dependency is not None and not storage.get_status(dependency, prefix, expnum, "p", ccd=ccd):
-                raise IOError("{} not yet run for {}".format(dependency, expnum))
-
-            observation = storage.Observation(expnum)
-            image = storage.FitsImage(observation, ccd=ccd)
             image.get(return_file=True, convert_to_sip=False)
             image.flat_field.get(return_file=True, convert_to_sip=False)
 
@@ -86,7 +82,7 @@ def run(expnum, ccd, version, prefix, dry_run, force):
             logging.error(str(e))
             message = str(e)
 
-    storage.set_status(task, prefix, expnum, version, ccd, message)
+    image.status(task, message)
 
     return
 

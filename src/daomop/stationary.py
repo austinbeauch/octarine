@@ -14,7 +14,29 @@ from . import util
 from .params import qrunid_end_date, qrunid_start_date
 
 task = "stationary"
-dependency = None
+dependency = "build_cat"
+
+
+class DependencyError(Exception):
+    pass
+
+
+def completed(pixel, expnum, version, ccd, catalog_dir):
+    """
+    Examine an HPX catalog and determine if the source catlog associated to expnum/ccd combo is already present.
+
+    :param pixel: the HealPix of the catalog to check.
+    :param expnum: exposure number of the single image being checked for membership
+    :param version: processing version, normally 'p'
+    :param ccd: ccd being checked
+    :param catalog_dir: directory on VOSpace containing the HealPix catalog.
+    :return:
+    """
+    observation = storage.Observation(expnum)
+    catalog = storage.FitsTable(observation, version=version, ccd=ccd, ext='.cat.fits')
+    dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
+    hpx_catalog = storage.HPXCatalog(pixel, catalog_dir=catalog_dir)
+    return dataset_name in hpx_catalog.table['dataset_name']
 
 
 def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=storage.CATALOG):
@@ -32,17 +54,12 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=sto
     """
     message = storage.SUCCESS
 
-    if storage.get_status(task, prefix, expnum, version=version, ccd=ccd) and not force:
+    if completed(pixel, expnum, version, ccd, catalog_dirname) and not force:
         logging.info("{} completed successfully for {} {} {} {}".format(task, prefix, expnum, version, ccd))
         return
 
     with storage.LoggingManager(task, str(expnum), expnum, ccd, version, dry_run):
-        storage.set_status(task, prefix, expnum, version, ccd=ccd, status='started')
         try:
-            if dependency is not None and not storage.get_status(dependency, prefix, 
-                                                                 expnum, "p", ccd=ccd):
-                raise IOError("{} not yet run for {}".format(dependency, expnum))
-
             # get catalog from the vospace storage area
             logging.info("Getting fits image from VOSpace")
 
@@ -61,8 +78,6 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=sto
             logging.debug(type(e))
             message = str(e)
             logging.error(message)
-
-        storage.set_status(task, prefix, expnum, version, ccd=ccd, status=message)
 
 
 def split_to_hpx(pixel, catalog, catalog_dir=None):
@@ -143,6 +158,7 @@ def match(pixel, expnum, ccd):
         catalog.table['HPXID'][idx2.data[~idx2.mask]] = hpx_cat.table['HPXID'][~idx2.mask]
         hpx_cat_len = len(hpx_cat.table)
     except NotFoundException:
+        logging.warning("Load of {} failed  at start.".format(hpx_cat.uri))
         pass
 
     # for all non-matched sources in this healpix we increment the counter.
@@ -160,7 +176,6 @@ def match(pixel, expnum, ccd):
             match_catalog = storage.FitsTable(storage.Observation(match_set[0]), ccd=match_set[1], ext='.cat.fits')
             match_image = storage.FitsImage(storage.Observation(match_set[0]), ccd=match_set[1])
             datasec = storage.datasec_to_list(match_image.header['DATASEC'])
-
             npts = numpy.sum([match_catalog.table['MAGERR_AUTO'] < 0.002])
             if npts < 10:
                 flux_radius_lim = 1.8
@@ -185,7 +200,10 @@ def match(pixel, expnum, ccd):
             catalog.table['OVERLAPS'] += \
                 [match_image.polygon.isInside(row['X_WORLD'], row['Y_WORLD']) for row in catalog.table]
         except NotFoundException:
+            logging.error("Missing image: {}".format(match_set))
             pass
+        except DependencyError as ex:
+            logging.error(str(ex))
 
     return catalog
 
