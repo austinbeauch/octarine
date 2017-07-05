@@ -49,6 +49,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.candidates = None
         self.zoom = None
         self._center = None
+        self.event = None
 
         # GUI elements
         self.pixel_base = 1.0
@@ -98,6 +99,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
         quit_button = Widgets.Button("Quit")
         quit_button.add_callback('activated', lambda x: self.exit())
 
+        reload_button = Widgets.Button("Reload")
+        reload_button.add_callback('activated', lambda x: self.reload_candidates())
+
         buttons_hbox = Widgets.HBox()  # line of buttons below viewer window
         buttons_hbox.add_widget(accept)
         buttons_hbox.add_widget(reject)
@@ -118,6 +122,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         quit_box = Widgets.HBox()  # add a quit button to the bottom of the container
         quit_box.add_widget(quit_button)
+        quit_box.add_widget(reload_button)
         full_vbox.add_widget(quit_box)
 
         self.console_box.set_text("Logging output:" + '\n')
@@ -153,6 +158,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.next()
 
     def exit(self):
+        """
+        Shuts down the application
+        """
         self.readout.set_text("Shutting down application.")
         self.logger.info("Attempting to shut down the application...")
         if self.top is not None:
@@ -165,8 +173,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         :param event: Catalogue number containing dataset
         """
-        logging.debug("Accepted candidate entry: {}".format(event.text))
-        self.candidates = candidate.CandidateSet(int(event.text))
+        if hasattr(event, 'text'):
+            self.event = int(event.text)
+
+        self.readout.set_text("Accepted candidate entry: {}".format(self.event))
+        self.candidates = candidate.CandidateSet(self.event)
 
         with self.lock:
             for bk_orbit in self.candidates:
@@ -174,8 +185,19 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     key = self.downloader.image_key(obs_record)
                     self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
 
-        self.candidates = candidate.CandidateSet(int(event.text))
+        self.candidates = candidate.CandidateSet(self.event)
         self.load()
+
+    def reload_candidates(self):
+        """
+        Performs a hard reload on all images for the case of loading errors.
+        Closes current worker pool and reopens a new one.
+        """
+        if self.event is not None:
+            self.pool.terminate()
+            self.pool = Pool(processes=PROCESSES)
+            self.load_candidates(self.event)
+            self.next()
 
     def load(self, obs_number=0):
         """
@@ -226,6 +248,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
             except Exception as ex:
                 logging.error(str(ex))
+                self.console_box.append_text(str(ex) + '\n')
                 logging.debug("Skipping candidate {} due to load failure".format(self.obs_number))
                 self.next()
 
@@ -242,6 +265,28 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.header_box.set_text(self.info)
         self.onscreen_message("Loaded: {}".format(self.candidate.observations[self.obs_number].comment.frame),
                               delay=0.5)
+
+    def write_record(self, rejected=False):
+        """
+        Writing observation lines to a new file.
+
+        :param rejected: Whether or not the candidate set contains a valid celestial object
+        :type rejected: bool
+        """
+        try:
+            art = storage.ASTRecord(self.candidate.observations[0].provisional_name)
+            print "art", type(art)
+            print dir(art)
+            with open(art.filename, 'w+') as fobj:
+                for ob in self.candidate.observations:
+                    if rejected:
+                        ob.null_observation = True
+                    fobj.write(ob.to_string()+'\n')
+            # art.put()
+            logging.info("Written to file {}".format(self.candidate.observations[0].provisional_name+".ast"))
+        except IOError as ex:
+            logging.error("Unable to write to file.")
+            raise ex
 
     def _mark_aperture(self):
         """
@@ -306,26 +351,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
             return
 
         self.set_pan(x, y)
-
-    def write_record(self, rejected=False):
-        """
-        Writing observation lines to a new file.
-        :param rejected: Whether or not the candidate set contains a valid celestial object
-        :type rejected: bool
-        """
-        try:
-            art = storage.ASTRecord(self.candidate.observations[0].provisional_name)
-            with open(art.filename, 'w+') as fobj:
-                for ob in self.candidate.observations:
-                    if rejected:
-                        ob.null_observation = True
-                    print ob.to_string()
-                    fobj.write(ob.to_string()+'\n')
-            art.put()
-            logging.info("Written to file {}".format(self.candidate.observations[0].provisional_name+".ast"))
-        except IOError as ex:
-            logging.error("Unable to write to file.")
-            raise ex
 
     def _key_press(self, canvas, keyname, opn, viewer):
         """
