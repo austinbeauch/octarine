@@ -249,7 +249,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
                 if key not in self.astro_images:
                     image = AstroImage.AstroImage(logger=self.logger)
-                    image.load_hdu(self.image_list[key][0])
+                    if len(self.image_list[key]) > 1:
+                        image.load_hdu(self.image_list[key][2])
+                    else:
+                        image.load_hdu(self.image_list[key][0])
+
                     self.astro_images[key] = image
 
                 self.set_image(self.astro_images[key])
