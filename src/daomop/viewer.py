@@ -14,11 +14,11 @@ from astropy.wcs import WCS
 
 logging.basicConfig(level=logging.INFO, format="%(module)s.%(funcName)s:%(lineno)s %(message)s")
 DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
-PROCESSES = 5
 LEGEND = 'Keyboard Shortcuts: \n' \
          'f: image backwards \n' \
          'g: image forwards \n' \
          't: contrast mode'
+PROCESSES = 5
 
 
 class ValidateGui(ipg.EnhancedCanvasView):
@@ -134,7 +134,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         full_vbox.add_widget(self.console_box)
         full_vbox.add_widget(quit_box)
-        self.console_box.set_text("Logging output:" + '\n')
+        self.console_box.set_text('Logging output:\n')
         container.set_widget(full_vbox)
 
     def next(self):
@@ -202,6 +202,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         Closes current worker pool and reopens a new one.
         """
         if self.event is not None:
+            self.console_box.append_text('Reloading all canditates...\n')
             self.pool.terminate()
             self.pool = Pool(processes=PROCESSES)
             self.load_candidates(self.event)
@@ -248,7 +249,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
                 if key not in self.astro_images:
                     image = AstroImage.AstroImage(logger=self.logger)
-                    image.load_hdu(self.image_list[key])
+                    image.load_hdu(self.image_list[key][0])
                     self.astro_images[key] = image
 
                 self.set_image(self.astro_images[key])
@@ -283,14 +284,12 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         try:
             art = storage.ASTRecord(self.candidate.observations[0].provisional_name)
-            print "art", type(art)
-            print dir(art)
             with open(art.filename, 'w+') as fobj:
                 for ob in self.candidate.observations:
                     if rejected:
                         ob.null_observation = True
-                    fobj.write(ob.to_string()+'\n')
-            # art.put()
+                    fobj.write(ob.to_string() + '\n')
+            art.put()
             logging.info("Written to file {}".format(self.candidate.observations[0].provisional_name+".ast"))
         except IOError as ex:
             logging.error("Unable to write to file.")
@@ -356,6 +355,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         if not(0 < x < self.get_data_size()[0] and 0 < y < self.get_data_size()[1]):
             logging.debug("Pan out of range: ({}, {}) is greater than half the viewing window.".format(x, y))
+            self.console_box.append_text("Pan out of range: ({}, {}) is greater than half the viewing window."
+                                         .format(x, y) + '\n')
             return
 
         self.set_pan(x, y)
@@ -399,7 +400,12 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Return current HDU
         """
-        return self.downloader.get(self.candidate.observations[self.obs_number])
+        hdu_list = self.downloader.get(self.candidate.observations[self.obs_number])
+
+        if len(hdu_list) > 1:
+            return hdu_list[1]  # Return index 1 if multi extension file? Possibly. Could use index 1 as reference.
+
+        return hdu_list[0]
 
     @property
     def header(self):

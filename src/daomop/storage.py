@@ -13,6 +13,7 @@ from astropy.coordinates import SkyCoord
 from astropy import units
 from astropy.table import Table
 from astropy.io import fits, ascii
+from astropy.io.fits import PrimaryHDU
 from astropy.time import Time
 from cadcutils.exceptions import BadRequestException, AlreadyExistsException, NotFoundException
 from numpy.linalg import LinAlgError
@@ -666,15 +667,31 @@ class FitsImage(FitsArtifact):
 
         if not hdu_list:
             raise OSError(errno.EFAULT, "Failed to retrieve cutout of image", self.uri)
-        for hdu in hdu_list:
-            header = deepcopy(hdu.header)
+
+        # if the hdu_list has more than one entry, it's a multi extension file. First item in the list is the
+        # PrimaryHDU which contains no PV keywords (so it is skipped over) and the next ones are ImageHDU's
+        # which do contain PV keywords.
+        # TODO: Add more rigorous testing to see if hdu_list contains a multi extension file?
+        if len(hdu_list) > 1:
+            for index, hdu in enumerate(hdu_list):
+                if isinstance(hdu, PrimaryHDU):  # skip over primaryHDU (contains no PV keywords)
+                    continue
+                header = deepcopy(hdu_list[index].header)
+                if convert_to_sip:
+                    try:
+                        pv_to_sip(header)
+                        hdu.header = header
+                    except LinAlgError as lin_alg_error:
+                        logging.error("PV_TO_SIP FAILED: {}".format(lin_alg_error))
+
+        else:
+            header = deepcopy(hdu_list[0].header)
             if convert_to_sip:
                 try:
                     pv_to_sip(header)
-                    hdu.header = header
+                    hdu_list[0].header = header
                 except LinAlgError as lin_alg_error:
                     logging.error("PV_TO_SIP FAILED: {}".format(lin_alg_error))
-                    logging.debug(header)
 
         if self.ccd is None:
             # build a list of CCD headers as we didn't do a CCD based cutout so need an MEF of headers.
