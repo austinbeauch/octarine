@@ -15,6 +15,10 @@ from astropy.wcs import WCS
 logging.basicConfig(level=logging.INFO, format="%(module)s.%(funcName)s:%(lineno)s %(message)s")
 DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
 PROCESSES = 5
+LEGEND = 'Keyboard Shortcuts: \n' \
+         'f: image backwards \n' \
+         'g: image forwards \n' \
+         't: contrast mode'
 
 
 class ValidateGui(ipg.EnhancedCanvasView):
@@ -23,19 +27,20 @@ class ValidateGui(ipg.EnhancedCanvasView):
         super(ValidateGui, self).__init__(logger=logger, bindings=bindings)
 
         self.console_box = Widgets.TextArea(editable=False)
-        self.console_streamer = logging.StreamHandler(stream=self.console_box.append_text)
 
-        self.logger = logger
-        self.top = window
-
-        self.enable_autocuts('on')
-        self.set_autocut_params('zscale')
+        # self.console_streamer = logging.StreamHandler(stream=self.console_box.append_text)
 
         self.downloader = downloader.Downloader()
         self.pool = Pool(processes=PROCESSES)
         self.lock = Lock()
         self.image_list = {}
         self.astro_images = {}
+
+        self.logger = logger
+        self.top = window
+
+        self.enable_autocuts('on')
+        self.set_autocut_params('zscale')
 
         # creating drawing canvas; initializing polygon types
         self.canvas = self.add_canvas()
@@ -55,6 +60,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.pixel_base = 1.0
         self.readout = Widgets.Label("")
         self.header_box = Widgets.TextArea(editable=False)
+
+        self.legend = Widgets.TextArea(wrap=True)
+        self.legend.set_text(LEGEND)
         self.build_gui(self.top)
 
     def build_gui(self, container):
@@ -64,20 +72,18 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         :param container: ginga.web.pgw.Widgets.TopLevel object
         """
-        bd = self.get_bindings()
-        bd.enable_all(True)
+        bindings = self.get_bindings()
+        bindings.enable_all(True)
 
-        # indicator
+        # keyboard mode indicator, upper right corner
         self.show_mode_indicator(True, corner='ur')
 
-        viewer_vbox = Widgets.VBox()  # box containing the viewer down to the buttons
+        viewer_vbox = Widgets.VBox()  # box containing the viewer
         viewer_vbox.set_border_width(2)
         viewer_vbox.set_spacing(1)
-
-        w = Viewers.GingaViewerWidget(viewer=self)
-        viewer_vbox.add_widget(w, stretch=1)
-
-        viewer_vbox.add_widget(self.readout, stretch=0)
+        viewer_widget = Viewers.GingaViewerWidget(viewer=self)
+        viewer_vbox.add_widget(viewer_widget, stretch=1)
+        viewer_vbox.add_widget(self.readout, stretch=0)  # text directly below the viewer for coordinate display
 
         self.set_callback('cursor-changed', self.motion_cb)
 
@@ -102,31 +108,33 @@ class ValidateGui(ipg.EnhancedCanvasView):
         reload_button = Widgets.Button("Reload")
         reload_button.add_callback('activated', lambda x: self.reload_candidates())
 
-        buttons_hbox = Widgets.HBox()  # line of buttons below viewer window
+        # accept/reject/next buttons
+        buttons_hbox = Widgets.HBox()
         buttons_hbox.add_widget(accept)
         buttons_hbox.add_widget(reject)
         buttons_hbox.add_widget(previous_set)
         buttons_hbox.add_widget(next_set)
         buttons_hbox.add_widget(load_candidates)
         buttons_hbox.set_spacing(7)
-        viewer_vbox.add_widget(buttons_hbox)
+        viewer_vbox.add_widget(buttons_hbox)  # add buttons below the viewer
+
+        # quit/reload buttons
+        quit_box = Widgets.HBox()
+        quit_box.add_widget(quit_button)
+        quit_box.add_widget(reload_button)
 
         viewer_header_hbox = Widgets.HBox()  # box containing the viewer/buttons and rightmost text area
         viewer_header_hbox.add_widget(viewer_vbox)
         viewer_header_hbox.add_widget(Widgets.Label(''))
         viewer_header_hbox.add_widget(self.header_box)
+        viewer_header_hbox.add_widget(self.legend)
 
         full_vbox = Widgets.VBox()  # vbox container for all elements
         full_vbox.add_widget(viewer_header_hbox)
+
         full_vbox.add_widget(self.console_box)
-
-        quit_box = Widgets.HBox()  # add a quit button to the bottom of the container
-        quit_box.add_widget(quit_button)
-        quit_box.add_widget(reload_button)
         full_vbox.add_widget(quit_box)
-
         self.console_box.set_text("Logging output:" + '\n')
-
         container.set_widget(full_vbox)
 
     def next(self):
