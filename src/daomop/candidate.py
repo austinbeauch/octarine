@@ -81,7 +81,7 @@ class Target(object):
 
     def previous(self):
         if self.current_observation == 0:
-            return
+            return None
         self.current_observation -= 1
         return ObservationSet(self.provisional_name,
                               self.record[self.observation_sets[self.current_observation]])
@@ -137,6 +137,8 @@ class CandidateSet(object):
     def previous(self):
         try:
             observation_set = self.target.previous()
+            if observation_set is None:
+                return None
             obs = []
             # noinspection PyTypeChecker
             for ob in observation_set:

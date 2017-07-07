@@ -17,7 +17,7 @@ DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
 LEGEND = 'Keyboard Shortcuts: \n' \
          'f: image backwards \n' \
          'g: image forwards \n' \
-         't: contrast mode'
+         't: contrast mode \n(right click on canvas to reset contrast)\n'
 PROCESSES = 5
 
 
@@ -126,8 +126,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
         viewer_header_hbox = Widgets.HBox()  # box containing the viewer/buttons and rightmost text area
         viewer_header_hbox.add_widget(viewer_vbox)
         viewer_header_hbox.add_widget(Widgets.Label(''))
-        viewer_header_hbox.add_widget(self.header_box)
-        viewer_header_hbox.add_widget(self.legend)
+        hbox = Widgets.HBox()
+        hbox.add_widget(self.header_box)
+        hbox.add_widget(self.legend)
+        viewer_header_hbox.add_widget(hbox)
+        # viewer_header_hbox.add_widget(self.legend)
 
         full_vbox = Widgets.VBox()  # vbox container for all elements
         full_vbox.add_widget(viewer_header_hbox)
@@ -153,7 +156,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if self.candidates is not None:
             self.obs_number = 0
             self.candidate = self.candidates.previous()
-            self.load()
+            if self.candidate is not None:
+                self.load()
 
     def accept_reject(self, rejected=False):
         """
@@ -249,8 +253,15 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
                 if key not in self.astro_images:
                     image = AstroImage.AstroImage(logger=self.logger)
+
                     if len(self.image_list[key]) > 1:
-                        image.load_hdu(self.image_list[key][2])
+                        image.load_hdu(self.image_list[key][1])
+
+                        image2 = AstroImage.AstroImage(logger=self.logger)
+                        image2.load_hdu(self.image_list[key][2])
+
+                        image.mosaic_inline([image2])
+
                     else:
                         image.load_hdu(self.image_list[key][0])
 
@@ -276,8 +287,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self._mark_aperture()
 
         self.header_box.set_text(self.info)
-        self.onscreen_message("Loaded: {}".format(self.candidate.observations[self.obs_number].comment.frame),
-                              delay=0.5)
+        self.readout.set_text("Loaded: {}".format(self.candidate.observations[self.obs_number].comment.frame))
 
     def write_record(self, rejected=False):
         """
@@ -407,7 +417,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         hdu_list = self.downloader.get(self.candidate.observations[self.obs_number])
 
         if len(hdu_list) > 1:
-            return hdu_list[1]  # Return index 1 if multi extension file? Possibly. Could use index 1 as reference.
+            return hdu_list[2]  # Return index 2 if multi extension file? Possibly. Could use index 2 as reference.
 
         return hdu_list[0]
 
