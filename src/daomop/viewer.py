@@ -297,7 +297,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :type rejected: bool
         """
         try:
-            art = storage.ASTRecord(self.candidate.observations[0].provisional_name)
+            art = storage.ASTRecord(self.candidate.observations[0].provisional_name, runid=self.header['QRUNID'])
             with open(art.filename, 'w+') as fobj:
                 for ob in self.candidate.observations:
                     if rejected:

@@ -796,8 +796,13 @@ class FitsImage(FitsArtifact):
 
 
 class ASTRecord(TemporaryArtifact):
-    def __init__(self, provisional_name, ext='.ast', *args, **kwargs):
-        dbimages = os.path.join(os.path.dirname(DBIMAGES), CATALOG)
+    def __init__(self, provisional_name, ext='.ast', runid=None, *args, **kwargs):
+
+        # could be handled better?
+        if runid is not None:
+            dbimages = os.path.join(os.path.dirname(DBIMAGES), CATALOG, runid)
+        else:
+            dbimages = os.path.join(os.path.dirname(DBIMAGES), CATALOG)
         obs = Observation(provisional_name, dbimages=dbimages)
         super(ASTRecord, self).__init__(obs, ext=ext, *args, **kwargs)
 
