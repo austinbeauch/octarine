@@ -254,13 +254,18 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 if key not in self.astro_images:
                     image = AstroImage.AstroImage(logger=self.logger)
 
+                    # TODO: Fix mark_aperture for MEF
                     if len(self.image_list[key]) > 1:
                         image.load_hdu(self.image_list[key][1])
 
-                        image2 = AstroImage.AstroImage(logger=self.logger)
-                        image2.load_hdu(self.image_list[key][2])
+                        # first image loaded, need to drop all other ImageHDU's into it
+                        img_list = [AstroImage.AstroImage(logger=self.logger) for _ in
+                                    range(len(self.image_list[key]) - 2)]
 
-                        image.mosaic_inline([image2])
+                        for index, img in enumerate(img_list):
+                            img.load_hdu(self.image_list[key][index+2])
+
+                        image.mosaic_inline(img_list)
 
                     else:
                         image.load_hdu(self.image_list[key][0])
