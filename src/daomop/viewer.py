@@ -1,3 +1,4 @@
+import os
 import sys
 import logging
 from multiprocessing.dummy import Pool, Lock
@@ -61,6 +62,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.pixel_base = 1.0
         self.readout = Widgets.Label("")
         self.header_box = Widgets.TextArea(editable=False)
+        self.next_set = Widgets.Button("Next Set >")
+        self.previous_set = Widgets.Button("< Previous Set")
 
         self.legend = Widgets.TextArea(wrap=True)
         self.legend.set_text(LEGEND)
@@ -102,11 +105,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         reject = Widgets.Button("Reject")
         reject.add_callback('activated', lambda x: self.accept_reject(rejected=True))
 
-        next_set = Widgets.Button("Next")
-        next_set.add_callback('activated', lambda x: self.next())
-
-        previous_set = Widgets.Button("Previous")
-        previous_set.add_callback('activated', lambda x: self.previous())
+        self.next_set.add_callback('activated', lambda x: self.next())
+        self.previous_set.add_callback('activated', lambda x: self.previous())
 
         quit_button = Widgets.Button("Quit")
         quit_button.add_callback('activated', lambda x: self.exit())
@@ -116,11 +116,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         # accept/reject/next buttons
         buttons_hbox = Widgets.HBox()
+        buttons_hbox.add_widget(self.previous_set)
         buttons_hbox.add_widget(accept)
         buttons_hbox.add_widget(reject)
-        buttons_hbox.add_widget(previous_set)
-        buttons_hbox.add_widget(next_set)
-        buttons_hbox.set_spacing(7)
+        buttons_hbox.add_widget(self.next_set)
+        buttons_hbox.set_spacing(10)
 
         # catalog directory text box
         catalog_box = Widgets.HBox()
@@ -170,13 +170,14 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Load the next set of images into the viewer
         """
-        self.readout.set_text("Next.")
         if self.candidates is not None:
             # noinspection PyBroadException
             try:
+                self.next_set.set_enabled(False)
                 self.obs_number = 0
                 self.candidate = self.candidates.next()
                 self.load()
+                self.next_set.set_enabled(True)
             except Exception:
                 self.console_box.append_text('Loading next candidate set failed\n')
 
@@ -184,12 +185,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Load the previous set of images into the viewer
         """
-        self.readout.set_text("Previous.")
         if self.candidates is not None:
+            self.previous_set.set_enabled(False)
             self.obs_number = 0
             self.candidate = self.candidates.previous()
             if self.candidate is not None:
                 self.load()
+            self.previous_set.set_enabled(True)
 
     def accept_reject(self, rejected=False):
         """
