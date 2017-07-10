@@ -840,8 +840,9 @@ class JSONCatalog(HPXCatalog):
     """
     The JSON record containing all the candidates found in the source HPX catalog associated with the pixel.
     """
-    def __init__(self, pixel):
-        super(JSONCatalog, self).__init__(pixel, version="_mjdalltracks", ext=".json")
+    def __init__(self, pixel, catalog_dir=None):
+        directory = os.path.join(CATALOG, catalog_dir)
+        super(JSONCatalog, self).__init__(pixel, version="_mjdalltracks", ext=".json", catalog_dir=directory)
         self._json = None
 
     @property

@@ -17,7 +17,8 @@ DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
 LEGEND = 'Keyboard Shortcuts: \n' \
          'f: image backwards \n' \
          'g: image forwards \n' \
-         't: contrast mode \n(right click on canvas to reset contrast)\n'
+         't: contrast mode \n(right click on canvas after pressing "t" to reset contrast)\n'
+RUNID = ''
 PROCESSES = 5
 
 
@@ -89,6 +90,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         load_candidates = Widgets.TextEntry()
         load_candidates.add_callback('activated', lambda x: self.load_candidates(x))
+        load_candidates.set_length(6)
+
+        catalog = Widgets.TextEntrySet(text='17AQ10')
+        catalog.add_callback('activated', lambda x: self.set_run_id(x))
+        catalog.set_length(5)
 
         accept = Widgets.Button("Accept")
         accept.add_callback('activated', lambda x: self.accept_reject())
@@ -122,6 +128,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         quit_box = Widgets.HBox()
         quit_box.add_widget(quit_button)
         quit_box.add_widget(reload_button)
+        quit_box.add_widget(catalog)
+        quit_box.set_spacing(10)
 
         viewer_header_hbox = Widgets.HBox()  # box containing the viewer/buttons and rightmost text area
         viewer_header_hbox.add_widget(viewer_vbox)
@@ -138,12 +146,14 @@ class ValidateGui(ipg.EnhancedCanvasView):
         full_vbox.add_widget(self.console_box)
         full_vbox.add_widget(quit_box)
         self.console_box.set_text('Logging output:\n')
+        self.header_box.set_text("Header:")
         container.set_widget(full_vbox)
 
     def next(self):
         """
         Load the next set of images into the viewer
         """
+        self.readout.set_text("Next.")
         if self.candidates is not None:
             self.obs_number = 0
             self.candidate = self.candidates.next()
@@ -153,6 +163,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Load the previous set of images into the viewer
         """
+        self.readout.set_text("Previous.")
         if self.candidates is not None:
             self.obs_number = 0
             self.candidate = self.candidates.previous()
@@ -165,6 +176,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         :param rejected: whether the candidate set has been accepted or rejected
         """
+        if rejected:
+            self.readout.set_text("Rejected.")
+        else:
+            self.readout.set_text("Accepted.")
         if self.candidates is not None:
             self.write_record(rejected=rejected)
             self.next()
@@ -179,6 +194,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.top.close()
         sys.exit()
 
+    def set_run_id(self, run_id):
+        global RUNID
+        RUNID = run_id.text
+        self.readout.set_text("Run ID set.")
+
     def load_candidates(self, event):
         """
         Initial candidates loaded into the viewer. Starts up a threadpool to download images simultaneously.
@@ -189,7 +209,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.event = int(event.text)
 
         self.readout.set_text("Accepted candidate entry: {}".format(self.event))
-        self.candidates = candidate.CandidateSet(self.event)
+        try:
+            self.candidates = candidate.CandidateSet(self.event, catalog_dir=RUNID)
+        except Exception as ex:
+            self.console_box.append_text("Failed to load candidates: {} ".format(str(ex)))
+            raise ex
 
         with self.lock:
             for bk_orbit in self.candidates:
@@ -197,7 +221,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     key = self.downloader.image_key(obs_record)
                     self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
 
-        self.candidates = candidate.CandidateSet(self.event)
+        self.candidates = candidate.CandidateSet(self.event, catalog_dir=RUNID)
         self.load()
 
     def reload_candidates(self):
@@ -206,7 +230,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         Closes current worker pool and reopens a new one.
         """
         if self.event is not None:
-            self.console_box.append_text('Reloading all canditates...\n')
+            self.console_box.append_text('Reloading all candidates...\n')
             self.pool.terminate()
             self.pool = Pool(processes=PROCESSES)
             self.load_candidates(self.event)
@@ -258,10 +282,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     if len(self.image_list[key]) > 1:
                         image.load_hdu(self.image_list[key][1])
 
-                        # first image loaded, need to drop all other ImageHDU's into it
+                        # first image loaded, need to mosaic all other images in with the first image
                         img_list = [AstroImage.AstroImage(logger=self.logger) for _ in
                                     range(len(self.image_list[key]) - 2)]
 
+                        # offset by 2 because index 0 is PrimaryHDU (no PV keywords) and index 1 has already been loaded
                         for index, img in enumerate(img_list):
                             img.load_hdu(self.image_list[key][index+2])
 
@@ -276,9 +301,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 break
 
             except Exception as ex:
-                logging.error(str(ex))
                 self.console_box.append_text(str(ex) + '\n')
-                logging.debug("Skipping candidate {} due to load failure".format(self.obs_number))
+                self.console_box.append_text("Skipping candidate {} due to load failure"
+                                             .format(self.candidate.observations[0].provisional_name) + '\n')
+                self.logger.info(str(ex))
+                self.logger.info("Skipping candidate {} due to load failure".format(self.obs_number))
                 self.next()
 
         if self.zoom is not None:
@@ -290,8 +317,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self._align()
 
         self._mark_aperture()
-
-        self.header_box.set_text(self.info)
+        self.header_box.set_text("Header:\n" + self.info)
         self.readout.set_text("Loaded: {}".format(self.candidate.observations[self.obs_number].comment.frame))
 
     def write_record(self, rejected=False):
@@ -310,8 +336,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     fobj.write(ob.to_string() + '\n')
             art.put()
             logging.info("Written to file {}".format(self.candidate.observations[0].provisional_name+".ast"))
+            self.console_box.append_text("Written to file {} at {}"
+                                         .format(self.candidate.observations[0].provisional_name+".ast",
+                                                 art.uri) + '\n')
         except IOError as ex:
-            logging.error("Unable to write to file.")
+            self.logger.error("Unable to write to file.")
+            self.console_box.append_text("Unable to write to file.")
+            self.console_box.append_text(str(ex) + '\n')
             raise ex
 
     def _mark_aperture(self):

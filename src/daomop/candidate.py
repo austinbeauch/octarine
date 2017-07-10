@@ -88,8 +88,8 @@ class Target(object):
 
 
 class Catalog(object):
-    def __init__(self, pixel):
-        self.catalog = storage.JSONCatalog(pixel)
+    def __init__(self, pixel, catalog_dir=None):
+        self.catalog = storage.JSONCatalog(pixel, catalog_dir=catalog_dir)
         self.current_target = -1
 
     def __iter__(self):
@@ -116,8 +116,8 @@ class Catalog(object):
 
 class CandidateSet(object):
 
-    def __init__(self, pixel):
-        self.catalog = Catalog(pixel)
+    def __init__(self, pixel, catalog_dir=None):
+        self.catalog = Catalog(pixel, catalog_dir=catalog_dir)
         self.target = self.catalog.next()
 
     def __iter__(self):
