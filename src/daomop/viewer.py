@@ -120,15 +120,32 @@ class ValidateGui(ipg.EnhancedCanvasView):
         buttons_hbox.add_widget(reject)
         buttons_hbox.add_widget(previous_set)
         buttons_hbox.add_widget(next_set)
-        buttons_hbox.add_widget(load_candidates)
         buttons_hbox.set_spacing(7)
-        viewer_vbox.add_widget(buttons_hbox)  # add buttons below the viewer
+
+        # catalog directory text box
+        catalog_box = Widgets.HBox()
+        catalog_label = Widgets.Label(text="Set Run ID:", style='color:red')
+        catalog_box.add_widget(catalog_label)
+        catalog_box.add_widget(catalog)
+        catalog_box.set_margins(15, 0, 15, 0)  # top, right, bottom, left
+
+        candidates_hbox = Widgets.HBox()
+        candidate_label = Widgets.Label(text="Enter candidate set:")
+        candidates_hbox.add_widget(candidate_label)
+        candidates_hbox.add_widget(load_candidates)
+
+        # button and text entry vbox
+        buttons_vbox = Widgets.VBox()
+        buttons_vbox.add_widget(buttons_hbox)
+        buttons_vbox.add_widget(catalog_box)
+        buttons_vbox.add_widget(candidates_hbox)
+
+        viewer_vbox.add_widget(buttons_vbox)  # add buttons below the viewer
 
         # quit/reload buttons
         quit_box = Widgets.HBox()
         quit_box.add_widget(quit_button)
         quit_box.add_widget(reload_button)
-        quit_box.add_widget(catalog)
         quit_box.set_spacing(10)
 
         viewer_header_hbox = Widgets.HBox()  # box containing the viewer/buttons and rightmost text area
@@ -155,9 +172,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         self.readout.set_text("Next.")
         if self.candidates is not None:
-            self.obs_number = 0
-            self.candidate = self.candidates.next()
-            self.load()
+            # noinspection PyBroadException
+            try:
+                self.obs_number = 0
+                self.candidate = self.candidates.next()
+                self.load()
+            except Exception:
+                self.console_box.append_text('Loading next candidate set failed\n')
 
     def previous(self):
         """
@@ -535,7 +556,7 @@ def main(params):
     app = Widgets.Application(logger=logger, host=params.host, port=params.port)
 
     #  create top level window
-    window = app.make_window("Validate 0.2.0", wid='Validate')
+    window = app.make_window("Validate", wid='Validate')
 
     # our own viewer object, customized with methods (see above)
     ValidateGui(logger, window)
