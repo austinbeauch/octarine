@@ -6,13 +6,14 @@ from multiprocessing.dummy import Pool, Lock
 from math import atan2, degrees
 from multiprocessing.pool import ApplyResult
 
-import candidate
-import downloader
-import storage
+from . import candidate
+from . import downloader
+from . import storage
 from ginga import AstroImage
 from ginga.web.pgw import ipg, Widgets, Viewers
 from ginga.misc import log
 from astropy.wcs import WCS
+from . import util
 
 logging.basicConfig(level=logging.INFO, format="%(module)s.%(funcName)s:%(lineno)s %(message)s")
 DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
@@ -23,14 +24,33 @@ LEGEND = 'Keyboard Shortcuts: \n' \
 PROCESSES = 5
 
 
+class ConsoleBoxStream(object):
+    """
+    A class that writes to a console box as a stream.
+    """
+    def __init__(self, console_box):
+        self.console_box = console_box
+
+    def write(self, bytes):
+        self.console_box.append_text(str(bytes))
+
+    def flush(self):
+        pass
+
+
 class ValidateGui(ipg.EnhancedCanvasView):
 
     def __init__(self, logger, window, bindings=None):
+        """
+
+        :param logger: a logger object to send messages to
+        :type logger: logging.Logger
+        :param window: The main window of the application
+        :param bindings: Any bindings previously set on this window.
+        """
         super(ValidateGui, self).__init__(logger=logger, bindings=bindings)
 
         self.console_box = Widgets.TextArea(editable=False)
-
-        # self.console_streamer = logging.StreamHandler(stream=self.console_box.append_text)
 
         self.downloader = downloader.Downloader()
         self.pool = Pool(processes=PROCESSES)
@@ -39,6 +59,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.astro_images = {}
 
         self.logger = logger
+        console_handler = logging.StreamHandler(stream=util.ConsoleBoxStream(self.console_box))
+        self.logger.addHandler(console_handler)
         self.top = window
 
         self.enable_autocuts('on')
