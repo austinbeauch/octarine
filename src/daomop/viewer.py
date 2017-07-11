@@ -244,7 +244,16 @@ class ValidateGui(ipg.EnhancedCanvasView):
         Looks up which pixel value does NOT have an accompanying directory in VOSpace. Any pixel value with a
          directory corresponds to a candidate set which has already been examined
         """
-        pass
+        count = 0
+        for filename in self.storage_list:
+            count += 1
+            if'_mjdalltracks.json' in filename:
+                if filename[:len('_mjdalltracks.json')] not in self.storage_list:
+                    x = re.match('(?P<hpx>HPX_)(?P<pixel>\d{5})(?P<leftover>_.*)', filename)
+                    self.storage_list = self.storage_list[count:]
+                    return int(x.group('pixel'))
+
+        return 0
 
     def load_candidates(self, event):
         """
