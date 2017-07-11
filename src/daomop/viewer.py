@@ -352,20 +352,23 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :type rejected: bool
         """
         try:
+            catalog_dir = os.path.join(storage.CATALOG,
+                                       self.header['RUNID'],
+                                       self.candidates.catalog.catalog.datasetname)
             art = storage.ASTRecord(self.candidate.observations[0].provisional_name,
-                                    self.candidates.catalog.catalog.pixel,
-                                    runid=self.header['QRUNID'])
+                                    catalog_dir=catalog_dir)
 
             with open(art.filename, 'w+') as fobj:
                 for ob in self.candidate.observations:
                     if rejected:
                         ob.null_observation = True
                     fobj.write(ob.to_string() + '\n')
-            art.put()
-            logging.info("Written to file {}".format(self.candidate.observations[0].provisional_name+".ast"))
-            self.console_box.append_text("Written to file {} at {}"
-                                         .format(self.candidate.observations[0].provisional_name+".ast",
-                                                 art.uri) + '\n')
+            self.pool.apply_async(self.downloader.put, (art,))
+
+            msg = "Writing {} to VOSpace".format(self.candidate.observations[0].provisional_name+".ast")
+            logging.info(msg)
+            self.console_box.append_text(msg+"\n")
+
         except IOError as ex:
             self.logger.error("Unable to write to file.")
             self.console_box.append_text("Unable to write to file.")
