@@ -265,12 +265,12 @@ class ValidateGui(ipg.EnhancedCanvasView):
             if x is not None and x.group('pixel') not in self.pixels:
                 self.pixels.append(x.group('pixel'))
 
-    @NotImplemented
     def lookup(self):
         """
         Looks up which pixel value does NOT have an accompanying directory in VOSpace. Any pixel value with a
          directory corresponds to a candidate set which has already been examined
         """
+        pass
 
     def load_candidates(self, event):
         """
