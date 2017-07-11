@@ -245,6 +245,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
 
         self.candidates = candidate.CandidateSet(self.event, catalog_dir=RUNID)
+        # print storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG, RUNID))
         self.load()
 
     def reload_candidates(self):
@@ -351,7 +352,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :type rejected: bool
         """
         try:
-            art = storage.ASTRecord(self.candidate.observations[0].provisional_name, runid=self.header['QRUNID'])
+            art = storage.ASTRecord(self.candidate.observations[0].provisional_name,
+                                    self.candidates.catalog.catalog.pixel,
+                                    runid=self.header['QRUNID'])
+
             with open(art.filename, 'w+') as fobj:
                 for ob in self.candidate.observations:
                     if rejected:
