@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import logging
 from multiprocessing.dummy import Pool, Lock
@@ -19,7 +20,6 @@ LEGEND = 'Keyboard Shortcuts: \n' \
          'f: image backwards \n' \
          'g: image forwards \n' \
          't: contrast mode \n(right click on canvas after pressing "t" to reset contrast)\n'
-RUNID = ''
 PROCESSES = 5
 
 
@@ -57,6 +57,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.zoom = None
         self._center = None
         self.event = None
+        self.storage_list = None
+        self.run_id = ''
+        self.pixels = []
 
         # GUI elements
         self.pixel_base = 1.0
@@ -178,8 +181,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 self.candidate = self.candidates.next()
                 self.load()
                 self.next_set.set_enabled(True)
-            except Exception:
-                self.console_box.append_text('Loading next candidate set failed\n')
+            except Exception as ex:
+                self.console_box.append_text('Loading next candidate set failed.\n')
+                if isinstance(ex, StopIteration):
+                    self.console_box.append_text('StopIteration error: End of candidate set.\n')
 
     def previous(self):
         """
@@ -218,9 +223,28 @@ class ValidateGui(ipg.EnhancedCanvasView):
         sys.exit()
 
     def set_run_id(self, run_id):
-        global RUNID
-        RUNID = run_id.text
+        """
+        :param run_id: QRUNID in a header file
+        """
+        self.run_id = run_id.text
         self.readout.set_text("Run ID set.")
+
+    def pixel_list(self):
+        """
+        Generates a list of pixel values from HPX catalogues in the current directory.
+        Catalogues take for form of HPX_xxxxx_RA_yyy.y_DEC_+zz.z_mjdalltracks.json where xxxxx is the pixel.
+        """
+        for item in self.storage_list:
+            x = re.match('(?P<hpx>HPX_)(?P<pixel>\d{5})(?P<leftover>_.*)', item)
+            if x is not None and x.group('pixel') not in self.pixels:
+                self.pixels.append(x.group('pixel'))
+
+    def lookup(self):
+        """
+        Looks up which pixel value does NOT have an accompanying directory in VOSpace. Any pixel value with a
+         directory corresponds to a candidate set which has already been examined
+        """
+        pass
 
     def load_candidates(self, event):
         """
@@ -232,10 +256,19 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.event = int(event.text)
 
         self.readout.set_text("Accepted candidate entry: {}".format(self.event))
+
+        self.storage_list = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
+                                                         storage.CATALOG,
+                                                         self.run_id))
+        self.pixel_list()
+        self.lookup()
+
         try:
-            self.candidates = candidate.CandidateSet(self.event, catalog_dir=RUNID)
+            self.candidates = candidate.CandidateSet(self.event, catalog_dir=self.run_id)
         except Exception as ex:
             self.console_box.append_text("Failed to load candidates: {} ".format(str(ex)))
+            if isinstance(ex, StopIteration):
+                self.console_box.append_text('StopIteration error. Candidate set might be empty.\n')
             raise ex
 
         with self.lock:
@@ -244,8 +277,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     key = self.downloader.image_key(obs_record)
                     self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
 
-        self.candidates = candidate.CandidateSet(self.event, catalog_dir=RUNID)
-        # print storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG, RUNID))
+        self.candidates = candidate.CandidateSet(self.event, catalog_dir=self.run_id)
+
         self.load()
 
     def reload_candidates(self):
@@ -353,8 +386,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         try:
             catalog_dir = os.path.join(storage.CATALOG,
-                                       self.header['RUNID'],
-                                       self.candidates.catalog.catalog.datasetname)
+                                       self.header['QRUNID'],
+                                       self.candidates.catalog.catalog.dataset_name)
+
             art = storage.ASTRecord(self.candidate.observations[0].provisional_name,
                                     catalog_dir=catalog_dir)
 
@@ -365,7 +399,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     fobj.write(ob.to_string() + '\n')
             self.pool.apply_async(self.downloader.put, (art,))
 
-            msg = "Writing {} to VOSpace".format(self.candidate.observations[0].provisional_name+".ast")
+            msg = "Writing {} to VOSpace at {}".format(self.candidate.observations[0].provisional_name+".ast",
+                                                       art.uri)
             logging.info(msg)
             self.console_box.append_text(msg+"\n")
 
