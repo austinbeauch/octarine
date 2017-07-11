@@ -13,7 +13,6 @@ from ginga import AstroImage
 from ginga.web.pgw import ipg, Widgets, Viewers
 from ginga.misc import log
 from astropy.wcs import WCS
-from . import util
 
 logging.basicConfig(level=logging.INFO, format="%(module)s.%(funcName)s:%(lineno)s %(message)s")
 DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
@@ -31,8 +30,13 @@ class ConsoleBoxStream(object):
     def __init__(self, console_box):
         self.console_box = console_box
 
-    def write(self, bytes):
-        self.console_box.append_text(str(bytes))
+    def write(self, content):
+        """
+
+        :param content: content to write to the console stream.
+        :return:
+        """
+        self.console_box.append_text(str(content))
 
     def flush(self):
         pass
@@ -59,7 +63,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.astro_images = {}
 
         self.logger = logger
-        console_handler = logging.StreamHandler(stream=util.ConsoleBoxStream(self.console_box))
+        console_handler = logging.StreamHandler(stream=ConsoleBoxStream(self.console_box))
         self.logger.addHandler(console_handler)
         self.top = window
 
