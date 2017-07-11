@@ -38,6 +38,17 @@ class Downloader(object):
 
         return self._downloaded_images[self.image_key(obs_record)]
 
+    def put(self, artifact):
+        """
+
+        :param artifact: the file object to store to VOSpace
+         :type artifact: storage.Artifact
+        :return:
+        """
+        # Lock off other network actions while upload in progress.
+        with self.lock:
+            artifact.put()
+
     def get_hdu(self, obs_record):
         """
         Retrieve a fits image associated with a given obs_record and return the HDU off the associated cutout.

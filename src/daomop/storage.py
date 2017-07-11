@@ -795,18 +795,6 @@ class FitsImage(FitsArtifact):
         return self.cutout(cutout=ra_dec, return_file=return_file, convert_to_sip=convert_to_sip)
 
 
-class ASTRecord(TemporaryArtifact):
-    def __init__(self, provisional_name, pixel, ext='.ast', runid=None, *args, **kwargs):
-
-        # could be handled better?
-        if runid is not None:
-            dbimages = os.path.join(os.path.dirname(DBIMAGES), CATALOG, runid, HPXCatalog(pixel).dataset_name)
-        else:
-            dbimages = os.path.join(os.path.dirname(DBIMAGES), CATALOG)
-        obs = Observation(provisional_name, dbimages=dbimages)
-        super(ASTRecord, self).__init__(obs, ext=ext, *args, **kwargs)
-
-
 class HPXCatalog(FitsTable):
 
     def __init__(self, pixel, nside=None, catalog_dir=None, **kwargs):
@@ -834,6 +822,16 @@ class HPXCatalog(FitsTable):
         return "HPX_{}_RA_{:04.1f}_DEC_{:+04.1f}".format(dataset_name,
                                                          self.skycoord.ra.degree,
                                                          self.skycoord.dec.degree)
+
+
+class ASTRecord(TemporaryArtifact):
+
+    def __init__(self, provisional_name, ext='.ast', catalog_dir=None, *args, **kwargs):
+        if catalog_dir is None:
+            catalog_dir = CATALOG
+        dbimages = os.path.join(os.path.dirname(DBIMAGES), catalog_dir)
+        obs = Observation(provisional_name, dbimages=dbimages)
+        super(ASTRecord, self).__init__(obs, ext=ext, subdir="", *args, **kwargs)
 
 
 class JSONCatalog(HPXCatalog):
