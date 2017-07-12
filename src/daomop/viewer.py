@@ -238,9 +238,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :param rejected: whether the candidate set has been accepted or rejected
         """
         if rejected:
-            self.console_box.append_text("Rejected.")
+            self.console_box.append_text("Rejected.\n")
         else:
-            self.console_box.append_text("Accepted.")
+            self.console_box.append_text("Accepted.\n")
         if self.candidates is not None:
             self.write_record(rejected=rejected)
             self.next()
@@ -249,7 +249,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Shuts down the application
         """
-        self.console_box.append_text("Shutting down application.")
+        self.console_box.append_text("Shutting down application.\n")
         self.logger.info("Attempting to shut down the application...")
         if self.top is not None:
             self.top.close()
@@ -260,7 +260,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :param run_id: QRUNID in a header file
         """
         self.run_id = run_id.text
-        self.console_box.append_text("Run ID set.")
+        self.console_box.append_text("Run ID set. \n")
 
     def pixel_list(self):
         """
@@ -297,7 +297,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if hasattr(event, 'text'):
             self.event = int(event.text)
 
-        self.console_box.append_text("Accepted candidate entry: {}".format(self.event))
+        self.console_box.append_text("Accepted candidate entry: {}\n".format(self.event))
 
         self.storage_list = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
                                                          storage.CATALOG,
@@ -308,12 +308,12 @@ class ValidateGui(ipg.EnhancedCanvasView):
         try:
             self.candidates = candidate.CandidateSet(self.event, catalog_dir=self.run_id)
         except Exception as ex:
-            self.console_box.append_text("Failed to load candidates: {} ".format(str(ex)))
+            self.console_box.append_text("Failed to load candidates: {} \n".format(str(ex)))
             if isinstance(ex, StopIteration):
                 self.console_box.append_text('StopIteration error. Candidate set might be empty.\n')
             raise ex
 
-        self.logger.info("Launching image prefetching.  Please be patient.")
+        self.logger.info("Launching image prefetching. Please be patient.\n")
 
         with self.lock:
             for obs_records in self.candidates:
@@ -386,7 +386,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         # load the image if not already available, for now we'll put this in here.
         if self.candidates is None:
-            logging.debug("No candidates loaded.")
+            logging.debug("No candidates loaded.\n")
             return
 
         if self.candidate is None:
@@ -432,10 +432,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
             except Exception as ex:
                 self.console_box.append_text(str(ex) + '\n')
-                self.console_box.append_text("Skipping candidate {} due to load failure"
-                                             .format(self.candidate[0].provisional_name) + '\n')
+                self.console_box.append_text("Skipping candidate {} due to load failure\n"
+                                             .format(self.candidate[0].provisional_name))
                 self.logger.info(str(ex))
-                self.logger.info("Skipping candidate {} due to load failure".format(self.obs_number))
+                self.logger.info("Skipping candidate {} due to load failure\n".format(self.obs_number))
                 self.next()
 
         if self.zoom is not None:
@@ -448,7 +448,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         self._mark_aperture()
         self.header_box.set_text("Header:\n" + self.info)
-        self.console_box.append_text("Loaded: {}".format(self.candidate[self.obs_number].comment.frame))
+        self.console_box.append_text("Loaded: {}\n".format(self.candidate[self.obs_number].comment.frame))
 
     def write_record(self, rejected=False):
         """
@@ -480,7 +480,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.console_box.append_text(msg+"\n")
 
         except IOError as ex:
-            self.logger.error("Unable to write to file.")
             self.console_box.append_text("Unable to write to file.")
             self.console_box.append_text(str(ex) + '\n')
             raise ex
@@ -564,10 +563,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :param viewer: Ginga EnhancedCanvasView object
         """
         self.logger.debug("Got key: {} from canvas: {} with opn: {} from viewer: {}".format(canvas,
-                                                                                           keyname,
-                                                                                           opn,
-                                                                                           viewer))
-        # Only step back if we aren't looking at a comparison images (as determind by the next_image keyword)
+                                                                                            keyname,
+                                                                                            opn,
+                                                                                            viewer))
+        # Only step back if we aren't looking at a comparison images (as determined by the next_image keyword)
         if keyname == 'f':
             if self.next_image is not None:
                 self.next_image = None
