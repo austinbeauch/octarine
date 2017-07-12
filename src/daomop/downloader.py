@@ -38,6 +38,16 @@ class Downloader(object):
 
         return self._downloaded_images[self.image_key(obs_record)]
 
+    def put(self, artifact):
+        """
+
+        :param artifact: the file object to store to VOSpace
+         :type artifact: storage.Artifact
+        :return:
+        """
+        # Lock off other network actions while upload in progress.
+        artifact.put()
+
     def get_hdu(self, obs_record):
         """
         Retrieve a fits image associated with a given obs_record and return the HDU off the associated cutout.
@@ -49,10 +59,10 @@ class Downloader(object):
         logging.debug("Retrieving {}".format(self.image_key(obs_record)))
         try:
             image = storage.FitsImage.from_frame(obs_record.comment.frame)
-            hdu = image.ra_dec_cutout(obs_record.coordinate)[-1]
+            hdu_list = image.ra_dec_cutout(obs_record.coordinate)
         except Exception as ex:
             logging.debug(ex)
             raise ex
 
         logging.debug("Got {}".format(self.image_key(obs_record)))
-        return hdu
+        return hdu_list

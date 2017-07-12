@@ -25,11 +25,17 @@ if __name__ == "__main__":
     optprs.add_option("--stderr", dest="logstderr", default=False,
                       action="store_true",
                       help="Copy logging also to stderr")
+    optprs.add_option("--opencl", dest="use_opencl", default=False,
+                      action="store_true",
+                      help="Use OpenCL acceleration")
+    optprs.add_option("--opencv", dest="use_opencv", default=False,
+                      action="store_true",
+                      help="Use OpenCv acceleration")
 
     (options, args) = optprs.parse_args(sys.argv[1:])
 
     if options.debug:
         import pdb
-        pdb.run('main(options)')
+        pdb.run('daomop.viewer.main(options)')
 
     daomop.viewer.main(options)

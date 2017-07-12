@@ -1,11 +1,17 @@
+import os
+import re
+import sys
 import logging
 from multiprocessing.dummy import Pool, Lock
 from math import atan2, degrees
 from multiprocessing.pool import ApplyResult
 
-import candidate
-import downloader
-import storage
+from astropy.time import Time
+from mp_ephem import ObsRecord
+
+from . import candidate
+from . import downloader
+from . import storage
 from ginga import AstroImage
 from ginga.web.pgw import ipg, Widgets, Viewers
 from ginga.misc import log
@@ -13,19 +19,45 @@ from astropy.wcs import WCS
 
 logging.basicConfig(level=logging.INFO, format="%(module)s.%(funcName)s:%(lineno)s %(message)s")
 DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
+LEGEND = 'Keyboard Shortcuts: \n' \
+         'f: image backwards \n' \
+         'g: image forwards \n' \
+         't: contrast mode \n(right click on canvas after pressing "t" to reset contrast)\n'
 PROCESSES = 5
+
+
+class ConsoleBoxStream(object):
+    """
+    A class that writes to a console box as a stream.
+    """
+    def __init__(self, console_box):
+        self.console_box = console_box
+
+    def write(self, content):
+        """
+
+        :param content: content to write to the console stream.
+        :return:
+        """
+        self.console_box.append_text(content)
+
+    def flush(self):
+        pass
 
 
 class ValidateGui(ipg.EnhancedCanvasView):
 
     def __init__(self, logger, window, bindings=None):
+        """
+
+        :param logger: a logger object to send messages to
+        :type logger: logging.Logger
+        :param window: The main window of the application
+        :param bindings: Any bindings previously set on this window.
+        """
         super(ValidateGui, self).__init__(logger=logger, bindings=bindings)
 
-        self.logger = logger
-        self.top = window
-
-        self.enable_autocuts('on')
-        self.set_autocut_params('zscale')
+        self.console_box = Widgets.TextArea(editable=False)
 
         self.downloader = downloader.Downloader()
         self.pool = Pool(processes=PROCESSES)
@@ -33,11 +65,18 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.image_list = {}
         self.astro_images = {}
 
+        self.logger = logger
+        console_handler = logging.StreamHandler(stream=ConsoleBoxStream(self.console_box))
+        self.logger.addHandler(console_handler)
+        self.top = window
+
+        self.enable_autocuts('on')
+        self.set_autocut_params('zscale')
+
         # creating drawing canvas; initializing polygon types
         self.canvas = self.add_canvas()
         self.circle = self.canvas.get_draw_class('circle')
 
-        # TODO: create canvas callbacks for scroll wheel zooming
         # creating key-press event handling
         self.canvas.add_callback('key-press', self._key_press, 'key', self)
 
@@ -46,35 +85,53 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.candidates = None
         self.zoom = None
         self._center = None
+        self.event = None
+        self.storage_list = None
+        self.run_id = ''
+        self.pixels = []
 
         # GUI elements
         self.pixel_base = 1.0
         self.readout = Widgets.Label("")
-        self.header_box = Widgets.TextArea(wrap=True, editable=True)
+        self.header_box = Widgets.TextArea(editable=False)
+        self.next_set = Widgets.Button("Next Set >")
+        self.previous_set = Widgets.Button("< Previous Set")
 
+        self.legend = Widgets.TextArea(wrap=True)
+        self.legend.set_text(LEGEND)
         self.build_gui(self.top)
+        self.comparison_images = {}
+        self.next_image = None
 
     def build_gui(self, container):
         """
-        Building the GUI to be displayed in an HTML5 canvas. Currently consists of three buttons, a text entry box,
-         and a text area.
+        Building the GUI to be displayed in an HTML5 canvas.
         Tested and working in Mozilla Firefox and Google Chrome web browsers.
+
         :param container: ginga.web.pgw.Widgets.TopLevel object
         """
-        vbox = Widgets.VBox()
-        vbox.set_border_width(2)
-        vbox.set_spacing(1)
+        bindings = self.get_bindings()
+        bindings.enable_all(True)
 
-        w = Viewers.GingaViewerWidget(viewer=self)
-        vbox.add_widget(w, stretch=1)
+        # keyboard mode indicator, upper right corner
+        self.show_mode_indicator(True, corner='ur')
 
-        vbox.add_widget(self.readout, stretch=0)
+        viewer_vbox = Widgets.VBox()  # box containing the viewer
+        viewer_vbox.set_border_width(2)
+        viewer_vbox.set_spacing(1)
+        viewer_widget = Viewers.GingaViewerWidget(viewer=self)
+        viewer_vbox.add_widget(viewer_widget, stretch=1)
+        viewer_vbox.add_widget(self.readout, stretch=0)  # text directly below the viewer for coordinate display
 
-        # maybe add the scroll wheel callbacks here?
         self.set_callback('cursor-changed', self.motion_cb)
 
-        load_candidates = Widgets.TextEntry(editable=False)  # can still edit text area?
+        load_candidates = Widgets.TextEntry()
         load_candidates.add_callback('activated', lambda x: self.load_candidates(x))
+        load_candidates.set_length(6)
+
+        catalog = Widgets.TextEntrySet(text='17AQ10')
+        catalog.add_callback('activated', lambda x: self.set_run_id(x))
+        catalog.set_length(5)
 
         accept = Widgets.Button("Accept")
         accept.add_callback('activated', lambda x: self.accept_reject())
@@ -82,32 +139,96 @@ class ValidateGui(ipg.EnhancedCanvasView):
         reject = Widgets.Button("Reject")
         reject.add_callback('activated', lambda x: self.accept_reject(rejected=True))
 
-        wclear = Widgets.Button("Skip")
-        wclear.add_callback('activated', lambda x: self.next())
+        self.next_set.add_callback('activated', lambda x: self.next())
+        self.previous_set.add_callback('activated', lambda x: self.previous())
 
+        # quit_button = Widgets.Button("Quit")
+        # quit_button.add_callback('activated', lambda x: self.exit())
+
+        reload_button = Widgets.Button("Reload")
+        reload_button.add_callback('activated', lambda x: self.reload_candidates())
+
+        # accept/reject/next buttons
+        buttons_hbox = Widgets.HBox()
+        buttons_hbox.add_widget(self.previous_set)
+        buttons_hbox.add_widget(accept)
+        buttons_hbox.add_widget(reject)
+        buttons_hbox.add_widget(self.next_set)
+        buttons_hbox.set_spacing(10)
+        buttons_hbox.add_widget(reload_button)
+
+        # catalog directory text box
+        catalog_box = Widgets.HBox()
+        catalog_label = Widgets.Label(text="Set Run ID:", style='color:red')
+        catalog_box.add_widget(catalog_label)
+        catalog_box.add_widget(catalog)
+        catalog_box.set_margins(15, 0, 15, 0)  # top, right, bottom, left
+
+        candidates_hbox = Widgets.HBox()
+        candidate_label = Widgets.Label(text="Enter candidate set:")
+        candidates_hbox.add_widget(candidate_label)
+        candidates_hbox.add_widget(load_candidates)
+
+        # button and text entry vbox
+        buttons_vbox = Widgets.VBox()
+        buttons_vbox.add_widget(buttons_hbox)
+        buttons_vbox.add_widget(catalog_box)
+        buttons_vbox.add_widget(candidates_hbox)
+
+        viewer_vbox.add_widget(buttons_vbox)  # add buttons below the viewer
+
+        # # quit/reload buttons
+        # quit_box = Widgets.HBox()
+        # #quit_box.add_widget(quit_button)
+        # quit_box.add_widget(reload_button)
+        # quit_box.set_spacing(10)
+
+        viewer_header_hbox = Widgets.HBox()  # box containing the viewer/buttons and rightmost text area
+        viewer_header_hbox.add_widget(viewer_vbox)
+        viewer_header_hbox.add_widget(Widgets.Label(''))
         hbox = Widgets.HBox()
-        h2box = Widgets.HBox()
-        h2box.add_widget(accept, stretch=0)
-        h2box.add_widget(reject, stretch=0)
-        h2box.add_widget(wclear, stretch=0)
-        h2box.add_widget(load_candidates, stretch=1)
-        h2box.set_spacing(7)
-        vbox.add_widget(h2box, stretch=1)
-
-        # need to put this in an hbox with an expanding label or the
-        # browser wants to resize the canvas, distorting it
-        hbox.add_widget(vbox, stretch=0)
-        hbox.add_widget(Widgets.Label(''), stretch=1)
         hbox.add_widget(self.header_box)
-        container.set_widget(hbox)
+        hbox.add_widget(self.legend)
+        viewer_header_hbox.add_widget(hbox)
+        # viewer_header_hbox.add_widget(self.legend)
+
+        full_vbox = Widgets.VBox()  # vbox container for all elements
+        # full_vbox.add_widget(quit_box)
+        full_vbox.add_widget(viewer_header_hbox)
+
+        hbox.add_widget(self.console_box)
+        self.console_box.set_text('Logging output:\n')
+        self.header_box.set_text("Header:")
+        container.set_widget(full_vbox)
 
     def next(self):
         """
         Load the next set of images into the viewer
         """
-        self.obs_number = 0
-        self.candidate = self.candidates.next()
-        self.load()
+        if self.candidates is not None:
+            # noinspection PyBroadException
+            try:
+                self.next_set.set_enabled(False)
+                self.obs_number = 0
+                self.candidate = self.candidates.next()
+                self.load()
+                self.next_set.set_enabled(True)
+            except Exception as ex:
+                self.console_box.append_text('Loading next candidate set failed.\n')
+                if isinstance(ex, StopIteration):
+                    self.console_box.append_text('StopIteration error: End of candidate set.\n')
+
+    def previous(self):
+        """
+        Load the previous set of images into the viewer
+        """
+        if self.candidates is not None:
+            self.previous_set.set_enabled(False)
+            self.obs_number = 0
+            self.candidate = self.candidates.previous()
+            if self.candidate is not None:
+                self.load()
+            self.previous_set.set_enabled(True)
 
     def accept_reject(self, rejected=False):
         """
@@ -115,26 +236,122 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         :param rejected: whether the candidate set has been accepted or rejected
         """
-        self.write_record(rejected=rejected)
-        self.next()
+        if rejected:
+            self.console_box.append_text("Rejected.")
+        else:
+            self.console_box.append_text("Accepted.")
+        if self.candidates is not None:
+            self.write_record(rejected=rejected)
+            self.next()
+
+    def exit(self):
+        """
+        Shuts down the application
+        """
+        self.console_box.append_text("Shutting down application.")
+        self.logger.info("Attempting to shut down the application...")
+        if self.top is not None:
+            self.top.close()
+        sys.exit()
+
+    def set_run_id(self, run_id):
+        """
+        :param run_id: QRUNID in a header file
+        """
+        self.run_id = run_id.text
+        self.console_box.append_text("Run ID set.")
+
+    def pixel_list(self):
+        """
+        Generates a list of pixel values from HPX catalogues in the current directory.
+        Catalogues take for form of HPX_xxxxx_RA_yyy.y_DEC_+zz.z_mjdalltracks.json where xxxxx is the pixel.
+        """
+        for item in self.storage_list:
+            x = re.match('(?P<hpx>HPX_)(?P<pixel>\d{5})(?P<leftover>_.*)', item)
+            if x is not None and x.group('pixel') not in self.pixels:
+                self.pixels.append(x.group('pixel'))
+
+    def lookup(self):
+        """
+        Looks up which pixel value does NOT have an accompanying directory in VOSpace. Any pixel value with a
+         directory corresponds to a candidate set which has already been examined
+        """
+        pass
 
     def load_candidates(self, event):
         """
-        Initial candidates loaded into the viewer. Starts up a threadpool to download images simultaneously.
+        Initial candidates loaded into the viewer. Starts up a thread pool to download images simultaneously.
 
         :param event: Catalogue number containing dataset
         """
-        logging.debug("Accepted candidate entry: {}".format(event.text))
-        self.candidates = candidate.CandidateSet(int(event.text))
+        if hasattr(event, 'text'):
+            self.event = int(event.text)
+
+        self.console_box.append_text("Accepted candidate entry: {}".format(self.event))
+
+        self.storage_list = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
+                                                         storage.CATALOG,
+                                                         self.run_id))
+        self.pixel_list()
+        self.lookup()
+
+        try:
+            self.candidates = candidate.CandidateSet(self.event, catalog_dir=self.run_id)
+        except Exception as ex:
+            self.console_box.append_text("Failed to load candidates: {} ".format(str(ex)))
+            if isinstance(ex, StopIteration):
+                self.console_box.append_text('StopIteration error. Candidate set might be empty.\n')
+            raise ex
+
+        self.logger.info("Launching image prefetching.  Please be patient.")
 
         with self.lock:
-            for bk_orbit in self.candidates:
-                for obs_record in bk_orbit.observations:
+            for obs_records in self.candidates:
+                previous_record = None
+                for obs_record in obs_records:
+                    assert isinstance(obs_record, ObsRecord)
                     key = self.downloader.image_key(obs_record)
-                    self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
+                    if key not in self.image_list:
+                        self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
 
-        self.candidates = candidate.CandidateSet(int(event.text))
+                    # Check if we should  load a comparison for the previous image.
+                    if previous_record is not None:
+                        offset = obs_record.coordinate.separation(previous_record.coordinate)
+                        if offset > storage.CUTOUT_RADIUS:
+                            # Insert a blank image in the list
+                            previous_key = self.downloader.image_key(previous_record)
+                            comparison = storage.get_comparison_image(previous_record.coordinate,
+                                                                      previous_record.date.mjd)
+                            comparison_obs_record = ObsRecord(null_observation=True,
+                                                              provisional_name=previous_record.provisional_name,
+                                                              date=Time(comparison[0]['mjdate'], format='mjd',
+                                                                        precision=5).mpc,
+                                                              ra=previous_record.coordinate.ra.degree,
+                                                              dec=previous_record.coordinate.dec.degree,
+                                                              frame=comparison[0]['observationID'],
+                                                              comment=previous_key)
+                            key = self.downloader.image_key(comparison_obs_record)
+                            self.comparison_images[previous_key] = key
+                            if key not in self.image_list:
+                                self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
+
+                    previous_record = obs_record
+
+        self.candidates = candidate.CandidateSet(self.event, catalog_dir=self.run_id)
+
         self.load()
+
+    def reload_candidates(self):
+        """
+        Performs a hard reload on all images for the case of loading errors.
+        Closes current worker pool and reopens a new one.
+        """
+        if self.event is not None:
+            self.console_box.append_text('Reloading all candidates...\n')
+            self.pool.terminate()
+            self.pool = Pool(processes=PROCESSES)
+            self.load_candidates(self.event)
+            self.next()
 
     def load(self, obs_number=0):
         """
@@ -168,7 +385,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
         while True:
             # noinspection PyBroadException
             try:
-                key = self.downloader.image_key(self.candidate.observations[self.obs_number])
+                if self.next_image is not None:
+                    key = self.next_image
+                else:
+                    key = self.downloader.image_key(self.candidate[self.obs_number])
 
                 with self.lock:
                     hdu = (isinstance(self.image_list[key], ApplyResult) and self.image_list[key].get()
@@ -177,15 +397,35 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
                 if key not in self.astro_images:
                     image = AstroImage.AstroImage(logger=self.logger)
-                    image.load_hdu(self.image_list[key])
+
+                    # TODO: Fix mark_aperture for MEF
+                    if len(self.image_list[key]) > 1:
+                        image.load_hdu(self.image_list[key][1])
+
+                        # first image loaded, need to mosaic all other images in with the first image
+                        img_list = [AstroImage.AstroImage(logger=self.logger) for _ in
+                                    range(len(self.image_list[key]) - 2)]
+
+                        # offset by 2 because index 0 is PrimaryHDU (no PV keywords) and index 1 has already been loaded
+                        for index, img in enumerate(img_list):
+                            img.load_hdu(self.image_list[key][index+2])
+
+                        image.mosaic_inline(img_list)
+
+                    else:
+                        image.load_hdu(self.image_list[key][0])
+
                     self.astro_images[key] = image
 
                 self.set_image(self.astro_images[key])
                 break
 
             except Exception as ex:
-                logging.error(str(ex))
-                logging.debug("Skipping candidate {} due to load failure".format(self.obs_number))
+                self.console_box.append_text(str(ex) + '\n')
+                self.console_box.append_text("Skipping candidate {} due to load failure"
+                                             .format(self.candidate[0].provisional_name) + '\n')
+                self.logger.info(str(ex))
+                self.logger.info("Skipping candidate {} due to load failure".format(self.obs_number))
                 self.next()
 
         if self.zoom is not None:
@@ -197,10 +437,43 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self._align()
 
         self._mark_aperture()
+        self.header_box.set_text("Header:\n" + self.info)
+        self.console_box.append_text("Loaded: {}".format(self.candidate[self.obs_number].comment.frame))
 
-        self.header_box.set_text(self.info)
-        self.onscreen_message("Loaded: {}"
-                              .format(self.candidate.observations[self.obs_number].comment.frame), delay=0.5)
+    def write_record(self, rejected=False):
+        """
+        Writing observation lines to a new file.
+
+        :param rejected: Whether or not the candidate set contains a valid celestial object
+        :type rejected: bool
+        """
+        try:
+            catalog_dir = os.path.join(storage.CATALOG,
+                                       self.header['QRUNID'],
+                                       self.candidates.catalog.catalog.dataset_name)
+
+            art = storage.ASTRecord(self.candidate[0].provisional_name,
+                                    version='',
+                                    catalog_dir=catalog_dir)
+
+            with open(art.filename, 'w+') as fobj:
+                for ob in self.candidate:
+                    if rejected:
+                        ob.null_observation = True
+                    fobj.write(ob.to_string() + '\n')
+
+            self.logger.info("Queuing job to write file to VOSpace.")
+            self.pool.apply_async(self.downloader.put, (art,))
+            msg = "Done Queuing {} for VOSpace write {}".format(self.candidate[0].provisional_name + ".ast",
+                                                                art.uri)
+            logging.info(msg)
+            self.console_box.append_text(msg+"\n")
+
+        except IOError as ex:
+            self.logger.error("Unable to write to file.")
+            self.console_box.append_text("Unable to write to file.")
+            self.console_box.append_text(str(ex) + '\n')
+            raise ex
 
     def _mark_aperture(self):
         """
@@ -209,8 +482,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         # the image cutout is considered the first object on the canvas, this deletes everything over top of it
         self.canvas.delete_objects(self.canvas.get_objects()[1:])
 
-        ra = self.candidate.observations[self.obs_number].coordinate.ra
-        dec = self.candidate.observations[self.obs_number].coordinate.dec
+        ra = self.candidate[self.obs_number].coordinate.ra
+        dec = self.candidate[self.obs_number].coordinate.dec
         x, y = WCS(self.header).all_world2pix(ra, dec, 0)
         self.canvas.add(self.circle(x, y, radius=10, color='red'))
 
@@ -262,28 +535,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         if not(0 < x < self.get_data_size()[0] and 0 < y < self.get_data_size()[1]):
             logging.debug("Pan out of range: ({}, {}) is greater than half the viewing window.".format(x, y))
+            self.console_box.append_text("Pan out of range: ({}, {}) is greater than half the viewing window."
+                                         .format(x, y) + '\n')
             return
 
         self.set_pan(x, y)
-
-    def write_record(self, rejected=False):
-        """
-        Writing observation lines to a new file.
-        :param rejected: Whether or not the candidate set contains a valid celestial object
-        :type rejected: bool
-        """
-        try:
-            art = storage.ASTRecord(self.candidate.observations[0].provisional_name)
-            with open(art.filename, 'w+') as fobj:
-                for ob in self.candidate.observations:
-                    if rejected:
-                        ob.null_observation = True
-                    fobj.write(ob.to_string()+'\n')
-            art.put()
-            logging.info("Written to file {}".format(self.candidate.observations[0].provisional_name+".ast"))
-        except IOError as ex:
-            logging.error("Unable to write to file.")
-            raise ex
 
     def _key_press(self, canvas, keyname, opn, viewer):
         """
@@ -297,19 +553,31 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :param opn: str "key"
         :param viewer: Ginga EnhancedCanvasView object
         """
-        logging.debug("Got key: {} from canvas: {} with opn: {} from viewer: {}".format(canvas, keyname, opn, viewer))
+        self.logger.debug("Got key: {} from canvas: {} with opn: {} from viewer: {}".format(canvas,
+                                                                                           keyname,
+                                                                                           opn,
+                                                                                           viewer))
+        # Only step back if we aren't looking at a comparison images (as determind by the next_image keyword)
         if keyname == 'f':
-            self.obs_number -= 1
+            if self.next_image is not None:
+                self.next_image = None
+            else:
+                self.obs_number -= 1
+                key = self.downloader.image_key(self.candidate[self.obs_number])
+                if key in self.comparison_images:
+                    self.next_image = self.comparison_images[key]
 
+        # Only step forward if this images doesn't have comparison image in the comparison image list.
         elif keyname == 'g':
-            self.obs_number += 1
-
-        else:
-            logging.debug("Unknown keystroke {}".format(keyname))  # keystrokes can be for ginga
-            return
+            key = self.downloader.image_key(self.candidate[self.obs_number])
+            if key in self.comparison_images and self.next_image is None:
+                self.next_image = self.comparison_images[key]
+            else:
+                self.next_image = None
+                self.obs_number += 1
 
         self.zoom = self.get_zoom()
-        self.obs_number %= len(self.candidate.observations)
+        self.obs_number %= len(self.candidate)
         self._load()
 
     @property
@@ -325,7 +593,12 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Return current HDU
         """
-        return self.downloader.get(self.candidate.observations[self.obs_number])
+        hdu_list = self.downloader.get(self.candidate[self.obs_number])
+
+        if len(hdu_list) > 1:
+            return hdu_list[2]  # Return index 2 if multi extension file? Possibly. Could use index 2 as reference.
+
+        return hdu_list[0]
 
     @property
     def header(self):
@@ -386,20 +659,33 @@ class WebServerFactory(object):
 
 def main(params):
 
-    logger = log.get_logger("daomop", options=params)
+    ginga_logger = log.get_logger("ginga", options=params)
 
-    app = Widgets.Application(logger=logger, host=params.host, port=params.port)
+    if params.use_opencv:
+        from ginga import trcalc
+        try:
+            trcalc.use('opencv')
+        except Exception as ex:
+            ginga_logger.warning("Error using OpenCL: {}".format(ex))
+
+    if params.use_opencl:
+        from ginga import trcalc
+        try:
+            trcalc.use('opencl')
+        except Exception as ex:
+            ginga_logger.warning("Error using OpenCL: {}".format(ex))
+
+    app = Widgets.Application(logger=ginga_logger, host=params.host, port=params.port)
 
     #  create top level window
-    window = app.make_window("Validate 0.2.0", wid='Validate')
+    window = app.make_window("Validate", wid='Validate')
 
     # our own viewer object, customized with methods (see above)
-    ValidateGui(logger, window)
+    ValidateGui(logging.getLogger('daomop'), window)
 
     try:
         app.start()
 
-    # TODO: Add exit button in viewing window that closes everything down
     except KeyboardInterrupt:
-        logger.info("Terminating viewer...")
+        ginga_logger.info("Terminating viewer...")
         window.close()

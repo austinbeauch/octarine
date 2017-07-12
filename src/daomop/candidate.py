@@ -1,7 +1,10 @@
 import sys
 
-from mp_ephem import ObsRecord, BKOrbit
+from astropy import units
+from astropy.coordinates import SkyCoord
+from mp_ephem import ObsRecord
 from astropy.time import Time
+import logging
 from . import storage
 
 _LETTERS = 'abcdefghijklmnopqrstuvwxyz'
@@ -15,10 +18,15 @@ def provisional(mjd, hpx, count):
     disco = Time(int(mjd), format='mjd').to_datetime()
     yr = disco.year - 2000
     dy = _LETTERS[disco.day // 14]
-    p1 = count // 36
-    p2 = (_DIGITS + _LETTERS)[count - p1 * 36]
-    p1 = (_DIGITS + _LETTERS)[p1]
-    return "c{:02}{:1}{:04}{:1}{:1}".format(yr, dy, hpx, p1, p2)
+    p1 = count
+    s2 = ""
+    logging.info("Loading candidate : {}".format(count))
+    while p1 > 35:
+        p2 = p1//36
+        s2 += (_DIGITS + _LETTERS)[p1 - p2 * 36]
+        p1 = p2
+    s1 = (_DIGITS + _LETTERS)[p1]
+    return "c{:02}{:1}{:04}{:1}{:1}".format(yr, dy, hpx, s1, s2)
 
 
 class ObservationSet(object):
@@ -31,9 +39,14 @@ class ObservationSet(object):
         return self
 
     def next(self):
-        self.current_observation += 1
-        if not self.current_observation < len(self.record['mag']):
+        """
+
+        :return: An Observation Record
+         :rtype: ObsRecord
+        """
+        if not self.current_observation + 1 < len(self.record['mag']):
             raise StopIteration
+        self.current_observation += 1
         return ObsRecord(provisional_name=self.provisional_name,
                          discovery=True,
                          note1=None,
@@ -73,16 +86,27 @@ class Target(object):
         return provisional(self.mjdate, self.hpx, self.current_observation)
 
     def next(self):
+        """
+
+        :rtype: ObservationSet
+        """
         self.current_observation += 1
         if not self.current_observation < len(self.observation_sets):
             raise StopIteration
         return ObservationSet(self.provisional_name,
                               self.record[self.observation_sets[self.current_observation]])
 
+    def previous(self):
+        if self.current_observation == 0:
+            return None
+        self.current_observation -= 1
+        return ObservationSet(self.provisional_name,
+                              self.record[self.observation_sets[self.current_observation]])
+
 
 class Catalog(object):
-    def __init__(self, pixel):
-        self.catalog = storage.JSONCatalog(pixel)
+    def __init__(self, pixel, catalog_dir=None):
+        self.catalog = storage.JSONCatalog(pixel, catalog_dir=catalog_dir)
         self.current_target = -1
 
     def __iter__(self):
@@ -93,33 +117,60 @@ class Catalog(object):
         return self.catalog.json.keys()
 
     def next(self):
+        """
+
+        :rtype: Target
+        """
         self.current_target += 1
         if not self.current_target < len(self.mjdates):
             raise StopIteration
         mjdate = self.mjdates[self.current_target]
         return Target(self.catalog.pixel, mjdate, self.catalog.json[mjdate])
 
+    def previous(self):
+        if self.current_target == 0:
+            return
+        self.current_target -= 1
+        mjdate = self.mjdates[self.current_target]
+        return Target(self.catalog.pixel, mjdate, self.catalog.json[mjdate])
+
 
 class CandidateSet(object):
 
-    def __init__(self, pixel):
-        self.catalog = Catalog(pixel)
+    def __init__(self, pixel, catalog_dir=None):
+        self.catalog = Catalog(pixel, catalog_dir=catalog_dir)
         self.target = self.catalog.next()
 
     def __iter__(self):
         return self
 
     def next(self):
+        """
+
+        :rtype: list(ObsRecord)
+        """
         try:
             observation_set = self.target.next()
             obs = []
             for ob in observation_set:
                 obs.append(ob)
-            return BKOrbit(obs)
+            return obs
         except StopIteration:
             self.target = self.catalog.next()
             return self.next()
 
+    def previous(self):
+        try:
+            observation_set = self.target.previous()
+            if observation_set is None:
+                return None
+            obs = []
+            # noinspection PyTypeChecker
+            for ob in observation_set:
+                obs.append(ob)
+            return obs
+        except StopIteration:
+            raise StopIteration
 
 if __name__ == "__main__":
     print sys.argv

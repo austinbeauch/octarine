@@ -13,6 +13,7 @@ from astropy.coordinates import SkyCoord
 from astropy import units
 from astropy.table import Table
 from astropy.io import fits, ascii
+from astropy.io.fits import PrimaryHDU
 from astropy.time import Time
 from cadcutils.exceptions import BadRequestException, AlreadyExistsException, NotFoundException
 from numpy.linalg import LinAlgError
@@ -167,17 +168,37 @@ def get_cfis_exposure_table(start_date=None, end_date=None):
 
     query = """SELECT Observation.observationID AS "observationID" """
     query += """FROM caom2.Plane AS Plane JOIN caom2.Observation AS Observation ON Plane.obsID = Observation.obsID """
-    query += """WHERE  ( Plane.calibrationLevel = '1' AND Plane.energy_bandpassName IN ( 'r.MP9602','r.MP9601' ) """
+    query += """WHERE   Plane.calibrationLevel = '1' AND Plane.energy_bandpassName IN ( 'r.MP9602','r.MP9601' ) """
     query += """AND Observation.instrument_name = 'MegaPrime' """
     query += """AND Observation.collection = 'CFHT' """
     query += """AND lower(Observation.proposal_title) LIKE '%cfis%' """
-    query += """AND  ( Plane.quality_flag IS NULL OR Plane.quality_flag != 'junk' ) )"""
+    query += """AND  ( Plane.quality_flag IS NULL OR Plane.quality_flag != 'junk' ) """
 
     if start_date is not None:
         query += " AND Plane.time_bounds_lower > {} ".format(start_date)
 
     if end_date is not None:
         query += " AND Plane.time_bounds_upper < {} ".format(end_date)
+
+    return tap_query(query)
+
+
+def get_comparison_image(coordinate, mjdate, minimum_time=None):
+    if minimum_time is None:
+        minimum_time = 20/60.0/24.0
+
+    query = """SELECT Observation.observationID AS "observationID", Plane.time_bounds_lower as "mjdate" """
+    query += """FROM caom2.Plane AS Plane JOIN caom2.Observation AS Observation ON Plane.obsID = Observation.obsID """
+    query += """WHERE  Plane.calibrationLevel = '1' AND Plane.energy_bandpassName IN ( 'r.MP9602','r.MP9601' ) """
+    query += """AND Observation.instrument_name = 'MegaPrime' """
+    query += """AND Observation.collection = 'CFHT' """
+    query += """AND lower(Observation.proposal_title) LIKE '%cfis%' """
+    query += """AND  ( Plane.quality_flag IS NULL OR Plane.quality_flag != 'junk' ) """
+
+    query += """AND CONTAINS(POINT('ICRS',{},{}), Plane.position_bounds)=1 """.format(coordinate.ra.degree,
+                                                                                      coordinate.dec.degree)
+    query += """AND ( Plane.time_bounds_lower < {} """.format(mjdate - minimum_time)
+    query += """ OR  Plane.time_bounds_upper > {} ) """.format(mjdate + minimum_time)
 
     return tap_query(query)
 
@@ -549,6 +570,11 @@ class FitsImage(FitsArtifact):
 
     @property
     def polygon(self):
+        """
+
+        :return: A polygon that covers the current position
+        :rtype: MyPolygon
+        """
         if self._polygon is None:
             self._polygon = MyPolygon.from_footprint(self.footprint)
         return self._polygon
@@ -659,22 +685,38 @@ class FitsImage(FitsArtifact):
         hdu_list = fits.open(fpt, scale_back=False)
         hdu_list.verify('silentfix+ignore')
 
-        # hdu_list[1].header['DATASEC'] = reset_datasec(cutout,
-        #                                               hdu_list[1].header['DATASEC'],
-        #                                               hdu_list[1].header['NAXIS1'],
-        #                                               hdu_list[1].header['NAXIS2'])
+        # hdu_list[0].header['DATASEC'] = reset_datasec(cutout,
+        #                                               hdu_list[0].header['DATASEC'],
+        #                                               hdu_list[0].header['NAXIS1'],
+        #                                               hdu_list[0].header['NAXIS2'])
 
         if not hdu_list:
             raise OSError(errno.EFAULT, "Failed to retrieve cutout of image", self.uri)
-        for hdu in hdu_list:
-            header = deepcopy(hdu.header)
+
+        # if the hdu_list has more than one entry, it's a multi extension file. First item in the list is the
+        # PrimaryHDU which contains no PV keywords (so it is skipped over) and the next ones are ImageHDU's
+        # which do contain PV keywords.
+        # TODO: Add more rigorous testing to see if hdu_list contains a multi extension file?
+        if len(hdu_list) > 1:
+            for index, hdu in enumerate(hdu_list):
+                if isinstance(hdu, PrimaryHDU):  # skip over primaryHDU (contains no PV keywords)
+                    continue
+                header = deepcopy(hdu_list[index].header)
+                if convert_to_sip:
+                    try:
+                        pv_to_sip(header)
+                        hdu.header = header
+                    except LinAlgError as lin_alg_error:
+                        logging.error("PV_TO_SIP FAILED: {}".format(lin_alg_error))
+
+        else:
+            header = deepcopy(hdu_list[0].header)
             if convert_to_sip:
                 try:
                     pv_to_sip(header)
-                    hdu.header = header
+                    hdu_list[0].header = header
                 except LinAlgError as lin_alg_error:
                     logging.error("PV_TO_SIP FAILED: {}".format(lin_alg_error))
-                    logging.debug(header)
 
         if self.ccd is None:
             # build a list of CCD headers as we didn't do a CCD based cutout so need an MEF of headers.
@@ -778,13 +820,6 @@ class FitsImage(FitsArtifact):
         return self.cutout(cutout=ra_dec, return_file=return_file, convert_to_sip=convert_to_sip)
 
 
-class ASTRecord(TemporaryArtifact):
-    def __init__(self, provisional_name, ext='.ast', *args, **kwargs):
-        dbimages = os.path.join(os.path.dirname(DBIMAGES), CATALOG)
-        obs = Observation(provisional_name, dbimages=dbimages)
-        super(ASTRecord, self).__init__(obs, ext=ext, *args, **kwargs)
-
-
 class HPXCatalog(FitsTable):
 
     def __init__(self, pixel, nside=None, catalog_dir=None, **kwargs):
@@ -814,12 +849,23 @@ class HPXCatalog(FitsTable):
                                                          self.skycoord.dec.degree)
 
 
+class ASTRecord(TemporaryArtifact):
+
+    def __init__(self, provisional_name, ext='.ast', catalog_dir=None, *args, **kwargs):
+        if catalog_dir is None:
+            catalog_dir = CATALOG
+        dbimages = os.path.join(os.path.dirname(DBIMAGES), catalog_dir)
+        obs = Observation(provisional_name, dbimages=dbimages)
+        super(ASTRecord, self).__init__(obs, ext=ext, subdir="", *args, **kwargs)
+
+
 class JSONCatalog(HPXCatalog):
     """
     The JSON record containing all the candidates found in the source HPX catalog associated with the pixel.
     """
-    def __init__(self, pixel):
-        super(JSONCatalog, self).__init__(pixel, version="_mjdalltracks", ext=".json")
+    def __init__(self, pixel, catalog_dir=None):
+        directory = os.path.join(CATALOG, catalog_dir)
+        super(JSONCatalog, self).__init__(pixel, version="_mjdalltracks", ext=".json", catalog_dir=directory)
         self._json = None
 
     @property
