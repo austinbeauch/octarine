@@ -1,7 +1,10 @@
 import sys
 
-from mp_ephem import ObsRecord, BKOrbit
+from astropy import units
+from astropy.coordinates import SkyCoord
+from mp_ephem import ObsRecord
 from astropy.time import Time
+import logging
 from . import storage
 
 _LETTERS = 'abcdefghijklmnopqrstuvwxyz'
@@ -15,10 +18,15 @@ def provisional(mjd, hpx, count):
     disco = Time(int(mjd), format='mjd').to_datetime()
     yr = disco.year - 2000
     dy = _LETTERS[disco.day // 14]
-    p1 = count // 36
-    p2 = (_DIGITS + _LETTERS)[count - p1 * 36]
-    p1 = (_DIGITS + _LETTERS)[p1]
-    return "c{:02}{:1}{:04}{:1}{:1}".format(yr, dy, hpx, p1, p2)
+    p1 = count
+    s2 = ""
+    logging.info("Loading candidate : {}".format(count))
+    while p1 > 35:
+        p2 = p1//36
+        s2 += (_DIGITS + _LETTERS)[p1 - p2 * 36]
+        p1 = p2
+    s1 = (_DIGITS + _LETTERS)[p1]
+    return "c{:02}{:1}{:04}{:1}{:1}".format(yr, dy, hpx, s1, s2)
 
 
 class ObservationSet(object):
@@ -31,9 +39,14 @@ class ObservationSet(object):
         return self
 
     def next(self):
-        self.current_observation += 1
-        if not self.current_observation < len(self.record['mag']):
+        """
+
+        :return: An Observation Record
+         :rtype: ObsRecord
+        """
+        if not self.current_observation + 1 < len(self.record['mag']):
             raise StopIteration
+        self.current_observation += 1
         return ObsRecord(provisional_name=self.provisional_name,
                          discovery=True,
                          note1=None,
@@ -73,6 +86,10 @@ class Target(object):
         return provisional(self.mjdate, self.hpx, self.current_observation)
 
     def next(self):
+        """
+
+        :rtype: ObservationSet
+        """
         self.current_observation += 1
         if not self.current_observation < len(self.observation_sets):
             raise StopIteration
@@ -100,6 +117,10 @@ class Catalog(object):
         return self.catalog.json.keys()
 
     def next(self):
+        """
+
+        :rtype: Target
+        """
         self.current_target += 1
         if not self.current_target < len(self.mjdates):
             raise StopIteration
@@ -124,12 +145,16 @@ class CandidateSet(object):
         return self
 
     def next(self):
+        """
+
+        :rtype: list(ObsRecord)
+        """
         try:
             observation_set = self.target.next()
             obs = []
             for ob in observation_set:
                 obs.append(ob)
-            return BKOrbit(obs)
+            return obs
         except StopIteration:
             self.target = self.catalog.next()
             return self.next()
@@ -143,7 +168,7 @@ class CandidateSet(object):
             # noinspection PyTypeChecker
             for ob in observation_set:
                 obs.append(ob)
-            return BKOrbit(obs)
+            return obs
         except StopIteration:
             raise StopIteration
 
