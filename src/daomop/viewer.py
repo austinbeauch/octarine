@@ -287,7 +287,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if hasattr(event, 'text'):
             self.event = int(event.text)
 
-        self.console_box.append_text("Accepted candidate entry: {}".format(self.event))
+        self.console_box.append_text("Accepted candidate entry: {}\n".format(self.event))
 
         self.storage_list = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
                                                          storage.CATALOG,
