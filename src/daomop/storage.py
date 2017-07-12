@@ -168,17 +168,37 @@ def get_cfis_exposure_table(start_date=None, end_date=None):
 
     query = """SELECT Observation.observationID AS "observationID" """
     query += """FROM caom2.Plane AS Plane JOIN caom2.Observation AS Observation ON Plane.obsID = Observation.obsID """
-    query += """WHERE  ( Plane.calibrationLevel = '1' AND Plane.energy_bandpassName IN ( 'r.MP9602','r.MP9601' ) """
+    query += """WHERE   Plane.calibrationLevel = '1' AND Plane.energy_bandpassName IN ( 'r.MP9602','r.MP9601' ) """
     query += """AND Observation.instrument_name = 'MegaPrime' """
     query += """AND Observation.collection = 'CFHT' """
     query += """AND lower(Observation.proposal_title) LIKE '%cfis%' """
-    query += """AND  ( Plane.quality_flag IS NULL OR Plane.quality_flag != 'junk' ) )"""
+    query += """AND  ( Plane.quality_flag IS NULL OR Plane.quality_flag != 'junk' ) """
 
     if start_date is not None:
         query += " AND Plane.time_bounds_lower > {} ".format(start_date)
 
     if end_date is not None:
         query += " AND Plane.time_bounds_upper < {} ".format(end_date)
+
+    return tap_query(query)
+
+
+def get_comparison_image(coordinate, mjdate, minimum_time=None):
+    if minimum_time is None:
+        minimum_time = 20/60.0/24.0
+
+    query = """SELECT Observation.observationID AS "observationID", Plane.time_bounds_lower as "mjdate" """
+    query += """FROM caom2.Plane AS Plane JOIN caom2.Observation AS Observation ON Plane.obsID = Observation.obsID """
+    query += """WHERE  Plane.calibrationLevel = '1' AND Plane.energy_bandpassName IN ( 'r.MP9602','r.MP9601' ) """
+    query += """AND Observation.instrument_name = 'MegaPrime' """
+    query += """AND Observation.collection = 'CFHT' """
+    query += """AND lower(Observation.proposal_title) LIKE '%cfis%' """
+    query += """AND  ( Plane.quality_flag IS NULL OR Plane.quality_flag != 'junk' ) """
+
+    query += """AND CONTAINS(POINT('ICRS',{},{}), Plane.position_bounds)=1 """.format(coordinate.ra.degree,
+                                                                                      coordinate.dec.degree)
+    query += """AND ( Plane.time_bounds_lower < {} """.format(mjdate - minimum_time)
+    query += """ OR  Plane.time_bounds_upper > {} ) """.format(mjdate + minimum_time)
 
     return tap_query(query)
 
@@ -550,6 +570,11 @@ class FitsImage(FitsArtifact):
 
     @property
     def polygon(self):
+        """
+
+        :return: A polygon that covers the current position
+        :rtype: MyPolygon
+        """
         if self._polygon is None:
             self._polygon = MyPolygon.from_footprint(self.footprint)
         return self._polygon

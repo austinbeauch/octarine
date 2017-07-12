@@ -46,8 +46,7 @@ class Downloader(object):
         :return:
         """
         # Lock off other network actions while upload in progress.
-        with self.lock:
-            artifact.put()
+        artifact.put()
 
     def get_hdu(self, obs_record):
         """
