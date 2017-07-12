@@ -20,6 +20,7 @@ LEGEND = 'Keyboard Shortcuts: \n' \
          'f: image backwards \n' \
          'g: image forwards \n' \
          't: contrast mode \n(right click on canvas after pressing "t" to reset contrast)\n'
+JSON_EXTENSION = '_mjdalltracks.json'
 PROCESSES = 5
 
 
@@ -273,8 +274,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         count = 0
         for filename in self.storage_list:
             count += 1
-            if'_mjdalltracks.json' in filename:
-                if filename[:len('_mjdalltracks.json')] not in self.storage_list:
+            if JSON_EXTENSION in filename:
+                if filename[:len(JSON_EXTENSION)] not in self.storage_list:
                     x = re.match('(?P<hpx>HPX_)(?P<pixel>\d{5})(?P<leftover>_.*)', filename)
                     self.storage_list = self.storage_list[count:]
                     return int(x.group('pixel'))
