@@ -23,6 +23,7 @@ LEGEND = 'Keyboard Shortcuts: \n' \
          'f: image backwards \n' \
          'g: image forwards \n' \
          't: contrast mode \n(right click on canvas after pressing "t" to reset contrast)\n'
+JSON_EXTENSION = '_mjdalltracks.json'
 PROCESSES = 5
 
 
@@ -85,9 +86,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.candidates = None
         self.zoom = None
         self._center = None
-        self.event = None
+        self.pixel = None
         self.storage_list = None
-        self.run_id = ''
+        self.qrun_id = ''
         self.pixels = []
 
         # GUI elements
@@ -96,6 +97,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.header_box = Widgets.TextArea(editable=False)
         self.next_set = Widgets.Button("Next Set >")
         self.previous_set = Widgets.Button("< Previous Set")
+        self.load_json = Widgets.Button("Load")
+        self.load_json.add_callback('activated', lambda x: self.load_candidates())
 
         self.legend = Widgets.TextArea(wrap=True)
         self.legend.set_text(LEGEND)
@@ -125,12 +128,12 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         self.set_callback('cursor-changed', self.motion_cb)
 
-        load_candidates = Widgets.TextEntry()
-        load_candidates.add_callback('activated', lambda x: self.load_candidates(x))
-        load_candidates.set_length(6)
+        candidate_set = Widgets.TextEntry()
+        candidate_set.add_callback('activated', lambda x: self.set_candidate(event=x))
+        candidate_set.set_length(6)
 
-        catalog = Widgets.TextEntrySet(text='17AQ10')
-        catalog.add_callback('activated', lambda x: self.set_run_id(x))
+        catalog = Widgets.TextEntrySet(text='testing')
+        catalog.add_callback('activated', lambda x: self.set_qrun_id(x))
         catalog.set_length(5)
 
         accept = Widgets.Button("Accept")
@@ -154,20 +157,22 @@ class ValidateGui(ipg.EnhancedCanvasView):
         buttons_hbox.add_widget(accept)
         buttons_hbox.add_widget(reject)
         buttons_hbox.add_widget(self.next_set)
-        buttons_hbox.set_spacing(10)
+        buttons_hbox.add_widget(self.load_json)
+        self.load_json.set_enabled(False)
         buttons_hbox.add_widget(reload_button)
+        buttons_hbox.set_spacing(10)
 
         # catalog directory text box
         catalog_box = Widgets.HBox()
-        catalog_label = Widgets.Label(text="Set Run ID:", style='color:red')
+        catalog_label = Widgets.Label(text="Set QRUNID:", style='color:red')
         catalog_box.add_widget(catalog_label)
         catalog_box.add_widget(catalog)
         catalog_box.set_margins(15, 0, 15, 0)  # top, right, bottom, left
 
         candidates_hbox = Widgets.HBox()
-        candidate_label = Widgets.Label(text="Enter candidate set:")
+        candidate_label = Widgets.Label(text="(Optional) Enter candidate set:")
         candidates_hbox.add_widget(candidate_label)
-        candidates_hbox.add_widget(load_candidates)
+        candidates_hbox.add_widget(candidate_set)
 
         # button and text entry vbox
         buttons_vbox = Widgets.VBox()
@@ -217,6 +222,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 self.console_box.append_text('Loading next candidate set failed.\n')
                 if isinstance(ex, StopIteration):
                     self.console_box.append_text('StopIteration error: End of candidate set.\n')
+                    self.load_json.set_enabled(True)
 
     def previous(self):
         """
@@ -229,6 +235,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
             if self.candidate is not None:
                 self.load()
             self.previous_set.set_enabled(True)
+            self.next_set.set_enabled(True)
 
     def accept_reject(self, rejected=False):
         """
@@ -237,9 +244,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :param rejected: whether the candidate set has been accepted or rejected
         """
         if rejected:
-            self.console_box.append_text("Rejected.")
+            self.console_box.append_text("Rejected.\n")
         else:
-            self.console_box.append_text("Accepted.")
+            self.console_box.append_text("Accepted.\n")
         if self.candidates is not None:
             self.write_record(rejected=rejected)
             self.next()
@@ -248,62 +255,89 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Shuts down the application
         """
-        self.console_box.append_text("Shutting down application.")
+        self.console_box.append_text("Shutting down application.\n")
         self.logger.info("Attempting to shut down the application...")
         if self.top is not None:
             self.top.close()
         sys.exit()
 
-    def set_run_id(self, run_id):
+    def set_qrun_id(self, qrun_id):
         """
-        :param run_id: QRUNID in a header file
+        :param qrun_id: QRUNID in a header file
         """
-        self.run_id = run_id.text
-        self.console_box.append_text("Run ID set.")
+        self.qrun_id = qrun_id.text
+        self.storage_list = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
+                                                         storage.CATALOG,
+                                                         self.qrun_id))
+        self.load_json.set_enabled(True)
+        self.console_box.append_text("Run ID set. \n")
 
-    def pixel_list(self):
-        """
-        Generates a list of pixel values from HPX catalogues in the current directory.
-        Catalogues take for form of HPX_xxxxx_RA_yyy.y_DEC_+zz.z_mjdalltracks.json where xxxxx is the pixel.
-        """
-        for item in self.storage_list:
-            x = re.match('(?P<hpx>HPX_)(?P<pixel>\d{5})(?P<leftover>_.*)', item)
-            if x is not None and x.group('pixel') not in self.pixels:
-                self.pixels.append(x.group('pixel'))
+    # def pixel_list(self):
+    #     """
+    #     Generates a list of pixel values from HPX catalogues in the current directory.
+    #     Catalogues take for form of HPX_xxxxx_RA_yyy.y_DEC_+zz.z_mjdalltracks.json where xxxxx is the pixel.
+    #     """
+    #     for item in self.storage_list:
+    #         x = re.match('(?P<hpx>HPX_)(?P<pixel>\d{5})(?P<leftover>_.*)', item)
+    #         if x is not None and x.group('pixel') not in self.pixels:
+    #             self.pixels.append(x.group('pixel'))
 
     def lookup(self):
         """
         Looks up which pixel value does NOT have an accompanying directory in VOSpace. Any pixel value with a
-         directory corresponds to a candidate set which has already been examined
+         directory corresponds to a candidate set which has already been examined.
         """
-        pass
+        # TODO: Check files in each directory to make sure it equals the length of the json file it's associated with
+        count = 0
+        for filename in self.storage_list:
+            count += 1
+            if JSON_EXTENSION in filename and filename[:-len(JSON_EXTENSION)] not in self.storage_list:
+                    x = re.match('(?P<hpx>HPX_)(?P<pixel>\d{5})(?P<leftover>_.*)', filename)
+                    if self.pixel is not None and int(x.group('pixel')) < self.pixel:
+                        continue
+                    self.storage_list = self.storage_list[count:]
+                    return int(x.group('pixel'))
 
-    def load_candidates(self, event):
+        return 0
+
+    def set_candidate(self, event):
+        """
+        Sets the pixel for the current Candidate set.
+
+        :param event: Pixel value
+        """
+        if hasattr(event, 'text'):
+            self.pixel = int(event.text)
+            self.console_box.append_text("Set pixel as {}\n".format(self.pixel))
+
+    def load_candidates(self, pixel=None):
         """
         Initial candidates loaded into the viewer. Starts up a thread pool to download images simultaneously.
 
-        :param event: Catalogue number containing dataset
+        :param pixel: Catalogue number containing dataset
         """
-        if hasattr(event, 'text'):
-            self.event = int(event.text)
+        self.load_json.set_enabled(False)
 
-        self.console_box.append_text("Accepted candidate entry: {}\n".format(self.event))
+        if pixel is None:
+            self.pixel = self.lookup()
 
-        self.storage_list = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
-                                                         storage.CATALOG,
-                                                         self.run_id))
-        self.pixel_list()
-        self.lookup()
+        if self.pixel == 0:  # recursive base case (when there are no more open candidate sets in the VOSpace directory)
+            self.console_box.append_text("No more candidate sets for this Run ID.\n")
+            raise StopIteration
+
+        self.console_box.append_text("Accepted candidate entry: {}\n".format(self.pixel))
 
         try:
-            self.candidates = candidate.CandidateSet(self.event, catalog_dir=self.run_id)
+            self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
         except Exception as ex:
-            self.console_box.append_text("Failed to load candidates: {} ".format(str(ex)))
+            self.console_box.append_text("Failed to load candidates: {} \n".format(str(ex)))
             if isinstance(ex, StopIteration):
                 self.console_box.append_text('StopIteration error. Candidate set might be empty.\n')
-            raise ex
+                self.load_candidates()  # recursive call to find next candidate which needs validation
+            else:
+                raise ex
 
-        self.logger.info("Launching image prefetching.  Please be patient.")
+        self.logger.warning("Launching image prefetching. Please be patient.\n")
 
         with self.lock:
             for obs_records in self.candidates:
@@ -337,7 +371,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
                     previous_record = obs_record
 
-        self.candidates = candidate.CandidateSet(self.event, catalog_dir=self.run_id)
+        self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
 
         self.load()
 
@@ -346,11 +380,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
         Performs a hard reload on all images for the case of loading errors.
         Closes current worker pool and reopens a new one.
         """
-        if self.event is not None:
+        if self.pixel is not None:
             self.console_box.append_text('Reloading all candidates...\n')
             self.pool.terminate()
             self.pool = Pool(processes=PROCESSES)
-            self.load_candidates(self.event)
+            self.load_candidates(self.pixel)
             self.next()
 
     def load(self, obs_number=0):
@@ -376,7 +410,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         # load the image if not already available, for now we'll put this in here.
         if self.candidates is None:
-            logging.debug("No candidates loaded.")
+            self.console_box.append_text("No candidates loaded.\n")
             return
 
         if self.candidate is None:
@@ -422,10 +456,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
             except Exception as ex:
                 self.console_box.append_text(str(ex) + '\n')
-                self.console_box.append_text("Skipping candidate {} due to load failure"
-                                             .format(self.candidate[0].provisional_name) + '\n')
-                self.logger.info(str(ex))
-                self.logger.info("Skipping candidate {} due to load failure".format(self.obs_number))
+                self.console_box.append_text("Skipping candidate {} due to load failure\n"
+                                             .format(self.candidate[0].provisional_name))
+                self.logger.debug(str(ex))
+                self.logger.debug("Skipping candidate {} due to load failure\n".format(self.obs_number))
                 self.next()
 
         if self.zoom is not None:
@@ -438,7 +472,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         self._mark_aperture()
         self.header_box.set_text("Header:\n" + self.info)
-        self.console_box.append_text("Loaded: {}".format(self.candidate[self.obs_number].comment.frame))
+        self.console_box.append_text("Loaded: {}\n".format(self.candidate[self.obs_number].comment.frame))
 
     def write_record(self, rejected=False):
         """
@@ -470,7 +504,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.console_box.append_text(msg+"\n")
 
         except IOError as ex:
-            self.logger.error("Unable to write to file.")
             self.console_box.append_text("Unable to write to file.")
             self.console_box.append_text(str(ex) + '\n')
             raise ex
@@ -554,10 +587,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :param viewer: Ginga EnhancedCanvasView object
         """
         self.logger.debug("Got key: {} from canvas: {} with opn: {} from viewer: {}".format(canvas,
-                                                                                           keyname,
-                                                                                           opn,
-                                                                                           viewer))
-        # Only step back if we aren't looking at a comparison images (as determind by the next_image keyword)
+                                                                                            keyname,
+                                                                                            opn,
+                                                                                            viewer))
+        # Only step back if we aren't looking at a comparison images (as determined by the next_image keyword)
         if keyname == 'f':
             if self.next_image is not None:
                 self.next_image = None
