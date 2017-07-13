@@ -339,7 +339,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if hasattr(event, 'text'):
             self.pixel = int(event.text)
             self.console_box.append_text("Set pixel as {}\n".format(self.pixel))
-            self.load_json.set_enabled(True)
+            if self.qrun_id != '':
+                self.load_json.set_enabled(True)
 
     def load_candidates(self, pixel=None):
         """
@@ -365,7 +366,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
             if isinstance(ex, StopIteration):
                 self.console_box.append_text('StopIteration error. Candidate set might be empty.\n')
                 self.load_candidates()  # recursive call to find next candidate which needs validation
-                return  # prevents further execution of method
+                return  # prevents further execution of this method
             else:
                 raise ex
 
