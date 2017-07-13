@@ -22,8 +22,11 @@ DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
 LEGEND = 'Keyboard Shortcuts: \n' \
          'f: image backwards \n' \
          'g: image forwards \n' \
-         't: contrast mode \n(right click on canvas after pressing "t" to reset contrast)\n'
+         'q: pan mode \n(click and drag on canvas)\n' \
+         't: contrast mode \n(right click on canvas after pressing "t" to reset contrast)\n' \
+         'esc: reset keyboard mode\n'
 JSON_EXTENSION = '_mjdalltracks.json'
+# JSON_EXTENSION = '_bk.json'
 PROCESSES = 5
 
 
@@ -88,6 +91,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self._center = None
         self.pixel = None
         self.storage_list = None
+        self.length_check = False
         self.qrun_id = ''
         self.pixels = []
 
@@ -95,10 +99,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.pixel_base = 1.0
         self.readout = Widgets.Label("")
         self.header_box = Widgets.TextArea(editable=False)
+        self.accept = Widgets.Button("Accept")
+        self.reject = Widgets.Button("Reject")
         self.next_set = Widgets.Button("Next Set >")
         self.previous_set = Widgets.Button("< Previous Set")
         self.load_json = Widgets.Button("Load")
-        self.load_json.add_callback('activated', lambda x: self.load_candidates())
 
         self.legend = Widgets.TextArea(wrap=True)
         self.legend.set_text(LEGEND)
@@ -132,16 +137,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
         candidate_set.add_callback('activated', lambda x: self.set_candidate(event=x))
         candidate_set.set_length(6)
 
-        catalog = Widgets.TextEntrySet(text='testing')
+        catalog = Widgets.TextEntrySet(text='17AQ06')
         catalog.add_callback('activated', lambda x: self.set_qrun_id(x))
         catalog.set_length(5)
 
-        accept = Widgets.Button("Accept")
-        accept.add_callback('activated', lambda x: self.accept_reject())
-
-        reject = Widgets.Button("Reject")
-        reject.add_callback('activated', lambda x: self.accept_reject(rejected=True))
-
+        self.accept.add_callback('activated', lambda x: self.accept_reject())
+        self.reject.add_callback('activated', lambda x: self.accept_reject(rejected=True))
+        self.load_json.add_callback('activated', lambda x: self.load_candidates())
         self.next_set.add_callback('activated', lambda x: self.next())
         self.previous_set.add_callback('activated', lambda x: self.previous())
 
@@ -154,8 +156,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         # accept/reject/next buttons
         buttons_hbox = Widgets.HBox()
         buttons_hbox.add_widget(self.previous_set)
-        buttons_hbox.add_widget(accept)
-        buttons_hbox.add_widget(reject)
+        buttons_hbox.add_widget(self.accept)
+        buttons_hbox.add_widget(self.reject)
         buttons_hbox.add_widget(self.next_set)
         buttons_hbox.add_widget(self.load_json)
         self.load_json.set_enabled(False)
@@ -214,14 +216,22 @@ class ValidateGui(ipg.EnhancedCanvasView):
             # noinspection PyBroadException
             try:
                 self.next_set.set_enabled(False)
+                self.previous_set.set_enabled(False)
+                self.accept.set_enabled(False)
+                self.reject.set_enabled(False)
                 self.obs_number = 0
                 self.candidate = self.candidates.next()
                 self.load()
                 self.next_set.set_enabled(True)
+                self.previous_set.set_enabled(True)
+                self.accept.set_enabled(True)
+                self.reject.set_enabled(True)
             except Exception as ex:
                 self.console_box.append_text('Loading next candidate set failed.\n')
                 if isinstance(ex, StopIteration):
-                    self.console_box.append_text('StopIteration error: End of candidate set.\n')
+                    self.console_box.append_text('StopIteration error: End of candidate set.\n'
+                                                 'Hit "Load" button to move onto the next set.\n')
+                    self.previous_set.set_enabled(True)
                     self.load_json.set_enabled(True)
 
     def previous(self):
@@ -229,13 +239,18 @@ class ValidateGui(ipg.EnhancedCanvasView):
         Load the previous set of images into the viewer
         """
         if self.candidates is not None:
+            self.next_set.set_enabled(False)
             self.previous_set.set_enabled(False)
+            self.accept.set_enabled(False)
+            self.reject.set_enabled(False)
             self.obs_number = 0
             self.candidate = self.candidates.previous()
             if self.candidate is not None:
                 self.load()
             self.previous_set.set_enabled(True)
             self.next_set.set_enabled(True)
+            self.accept.set_enabled(True)
+            self.reject.set_enabled(True)
 
     def accept_reject(self, rejected=False):
         """
@@ -270,7 +285,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                                                          storage.CATALOG,
                                                          self.qrun_id))
         self.load_json.set_enabled(True)
-        self.console_box.append_text("Run ID set. \n")
+        self.console_box.append_text("QRUNID set to {}. \n".format(self.qrun_id))
 
     # def pixel_list(self):
     #     """
@@ -284,20 +299,35 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
     def lookup(self):
         """
-        Looks up which pixel value does NOT have an accompanying directory in VOSpace. Any pixel value with a
-         directory corresponds to a candidate set which has already been examined.
-        """
-        # TODO: Check files in each directory to make sure it equals the length of the json file it's associated with
-        count = 0
-        for filename in self.storage_list:
-            count += 1
-            if JSON_EXTENSION in filename and filename[:-len(JSON_EXTENSION)] not in self.storage_list:
-                    x = re.match('(?P<hpx>HPX_)(?P<pixel>\d{5})(?P<leftover>_.*)', filename)
-                    if self.pixel is not None and int(x.group('pixel')) < self.pixel:
-                        continue
-                    self.storage_list = self.storage_list[count:]
-                    return int(x.group('pixel'))
+        Looks up which pixel value for candidate files in VOSpace.
 
+        :return pixel value for the candidate files; 0 if no candidate files have been found
+        """
+        count = 0
+        self.length_check = False
+        for filename in self.storage_list:
+
+            # ex: filename = HPX_00887_RA_203.6_DEC_+58.9_mjdalltracks.json,
+            #     filename[:-len(JSON_EXTENSION)] = HPX_00887_RA_203.6_DEC_+58.9
+            # sub_directory will be the directory where a candidate's .ast files are written
+            sub_directory = filename[:-len(JSON_EXTENSION)]
+            count += 1
+
+            # if the file extension is in the filename, then it is a file containing candidate information
+            if JSON_EXTENSION in filename:
+                x = re.match('(?P<hpx>HPX_)(?P<pixel>\d{5})(?P<leftover>_.*)', filename)
+
+                if self.pixel is not None and int(x.group('pixel')) < self.pixel:
+                    continue  # skipping over json files until the specified one has been reached
+
+                # if the sub directory exists, we will have to check that all the candidates have been investigated
+                elif sub_directory in self.storage_list:
+                    self.length_check = True
+
+                # TODO: go back to server for storage_list in case two people are actively writing from unique servers
+                # cutting down the storage list for further iterating
+                self.storage_list = self.storage_list[count:]
+                return int(x.group('pixel'))
         return 0
 
     def set_candidate(self, event):
@@ -309,6 +339,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if hasattr(event, 'text'):
             self.pixel = int(event.text)
             self.console_box.append_text("Set pixel as {}\n".format(self.pixel))
+            self.load_json.set_enabled(True)
 
     def load_candidates(self, pixel=None):
         """
@@ -322,7 +353,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.pixel = self.lookup()
 
         if self.pixel == 0:  # recursive base case (when there are no more open candidate sets in the VOSpace directory)
-            self.console_box.append_text("No more candidate sets for this Run ID.\n")
+            self.console_box.append_text("No more candidate sets for this QRUNID.\n")
             raise StopIteration
 
         self.console_box.append_text("Accepted candidate entry: {}\n".format(self.pixel))
@@ -334,13 +365,16 @@ class ValidateGui(ipg.EnhancedCanvasView):
             if isinstance(ex, StopIteration):
                 self.console_box.append_text('StopIteration error. Candidate set might be empty.\n')
                 self.load_candidates()  # recursive call to find next candidate which needs validation
+                return  # prevents further execution of method
             else:
                 raise ex
 
         self.logger.warning("Launching image prefetching. Please be patient.\n")
 
         with self.lock:
+            count = 0
             for obs_records in self.candidates:
+                count += 1
                 previous_record = None
                 for obs_record in obs_records:
                     assert isinstance(obs_record, ObsRecord)
@@ -372,6 +406,24 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     previous_record = obs_record
 
         self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
+        self.candidate = None  # reset on candidate to clear it of any leftover from previous sets
+        if self.length_check:
+            # if the amount of candidate sets is less than the amount of files in that directory
+            directory_length = len(storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
+                                                                storage.CATALOG,
+                                                                self.qrun_id,
+                                                                self.candidates.catalog.catalog.dataset_name),
+                                                   force=True))
+            # count is being  determined when all the candidates are being loaded. If the count could be set
+            #  when self.candidates is set, a lot of time could be saved by doing this check immediately after setting
+            #  self.candidates. The length is stored deep within candidates in a dictionary which might be difficult
+            #  to extract consistently.
+            if count == directory_length:
+                self.console_box.append_text("Candidate set {} fully examined.\n".format(self.pixel))
+                self.load_candidates()
+                return
+            elif count > directory_length:
+                self.console_box.append_text("Candidate set {} not fully examined.\n".format(self.pixel))
 
         self.load()
 
@@ -413,9 +465,27 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.console_box.append_text("No candidates loaded.\n")
             return
 
+        # loads first candidate
         if self.candidate is None:
             self.next()
 
+        # checks if candidate has already been examined with a file written on VOSpace.
+        # length_check is necessary because it means the sub directory exists, if it doesn't an error will be thrown
+        if self.length_check and self.candidate[0].provisional_name + '.ast' in storage.listdir(
+                os.path.join(os.path.dirname(storage.DBIMAGES),
+                             storage.CATALOG, self.qrun_id,
+                             self.candidates.catalog.catalog.dataset_name), force=True):
+            self.console_box.append_text("Candidate {} has been investigated.\n"
+                                         .format(self.candidate[0].provisional_name))
+            self.next()
+            return
+
+        # Once we have found a candidate that has not been accepted/rejected, we assume that all other candidates
+        #  following have also not been investigated. In the case where following candidates have been investigated
+        #  and written to file, length_check should not be reset to false here. This reset is simply so the check above
+        #  does not have to be completed every single time, since it can be expensive (specially when force=True,
+        #  since the goes to the server each time).
+        self.length_check = False
         while True:
             # noinspection PyBroadException
             try:
