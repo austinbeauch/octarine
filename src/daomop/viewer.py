@@ -134,7 +134,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         candidate_set.add_callback('activated', lambda x: self.set_pixel(event=x))
         candidate_set.set_length(6)
 
-        catalog = Widgets.TextEntrySet(text='17AQ10')
+        catalog = Widgets.TextEntrySet(text='17AQ06')
         catalog.add_callback('activated', lambda x: self.set_qrun_id(x))
         catalog.set_length(5)
 
@@ -218,6 +218,19 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 self.reject.set_enabled(False)
                 self.obs_number = 0
                 self.candidate = self.candidates.next()
+
+                # Checks if candidate has already been examined with a file written on VOSpace.
+                # length_check is necessary because it means the sub directory exists, if it doesn't an error will be
+                # thrown when looking in the directory list.
+                if self.length_check and self.candidate[0].provisional_name + '.ast' in storage.listdir(
+                        os.path.join(os.path.dirname(storage.DBIMAGES),
+                                     storage.CATALOG, self.qrun_id,
+                                     self.candidates.catalog.catalog.dataset_name), force=True):
+                    self.console_box.append_text("Candidate {} has been investigated.\n"
+                                                 .format(self.candidate[0].provisional_name))
+                    self.next()
+                    return
+
                 self.load()
                 self.next_set.set_enabled(True)
                 self.previous_set.set_enabled(True)
@@ -473,23 +486,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if self.candidate is None:
             self.next()
 
-        # checks if candidate has already been examined with a file written on VOSpace.
-        # length_check is necessary because it means the sub directory exists, if it doesn't an error will be thrown
-        if self.length_check and self.candidate[0].provisional_name + '.ast' in storage.listdir(
-                os.path.join(os.path.dirname(storage.DBIMAGES),
-                             storage.CATALOG, self.qrun_id,
-                             self.candidates.catalog.catalog.dataset_name), force=True):
-            self.console_box.append_text("Candidate {} has been investigated.\n"
-                                         .format(self.candidate[0].provisional_name))
-            self.next()
-            return
-
-        # Once we have found a candidate that has not been accepted/rejected, we assume that all other candidates
-        #  following have also not been investigated. In the case where following candidates have been investigated
-        #  and written to file, length_check should not be reset to false here. This reset is simply so the check above
-        #  does not have to be completed every single time, since it can be expensive (specially when force=True,
-        #  since it goes to the server each time).
-        self.length_check = False
         while True:
             # noinspection PyBroadException
             try:
