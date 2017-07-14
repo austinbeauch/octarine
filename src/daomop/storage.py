@@ -60,7 +60,7 @@ FLATS_VOSPACE = 'vos:sgwyn/flats'
 ARCHIVE = 'CFHT'
 DEFAULT_FORMAT = 'fits'
 NSIDE = 32
-
+MOVING_TARGET_VERSION = '_bk'
 # default radius to be "cut out" when calling ra_dec_cutout. Set to .1 arc minute, or 1/360th of a degree
 CUTOUT_RADIUS = 0.4 * units.arcminute
 
@@ -865,7 +865,7 @@ class JSONCatalog(HPXCatalog):
     """
     def __init__(self, pixel, catalog_dir=None):
         directory = os.path.join(CATALOG, catalog_dir)
-        super(JSONCatalog, self).__init__(pixel, version="_mjdalltracks", ext=".json", catalog_dir=directory)
+        super(JSONCatalog, self).__init__(pixel, version=MOVING_TARGET_VERSION, ext=".json", catalog_dir=directory)
         self._json = None
 
     @property

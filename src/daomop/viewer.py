@@ -1,6 +1,5 @@
 import os
 import re
-import sys
 import logging
 from multiprocessing.dummy import Pool, Lock
 from math import atan2, degrees
@@ -25,8 +24,6 @@ LEGEND = 'Keyboard Shortcuts: \n' \
          'q: pan mode \n(click and drag on canvas)\n' \
          't: contrast mode \n(right click on canvas after pressing "t" to reset contrast)\n' \
          'esc: reset keyboard mode\n'
-JSON_EXTENSION = '_mjdalltracks.json'
-# JSON_EXTENSION = '_bk.json'
 PROCESSES = 5
 
 
@@ -134,10 +131,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.set_callback('cursor-changed', self.motion_cb)
 
         candidate_set = Widgets.TextEntry()
-        candidate_set.add_callback('activated', lambda x: self.set_candidate(event=x))
+        candidate_set.add_callback('activated', lambda x: self.set_pixel(event=x))
         candidate_set.set_length(6)
 
-        catalog = Widgets.TextEntrySet(text='17AQ06')
+        catalog = Widgets.TextEntrySet(text='17AQ10')
         catalog.add_callback('activated', lambda x: self.set_qrun_id(x))
         catalog.set_length(5)
 
@@ -258,23 +255,21 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         :param rejected: whether the candidate set has been accepted or rejected
         """
-        if rejected:
-            self.console_box.append_text("Rejected.\n")
-        else:
-            self.console_box.append_text("Accepted.\n")
+        self.console_box.append_text("Rejected.\n") if rejected else self.console_box.append_text("Accepted.\n")
         if self.candidates is not None:
             self.write_record(rejected=rejected)
             self.next()
 
-    def exit(self):
-        """
-        Shuts down the application
-        """
-        self.console_box.append_text("Shutting down application.\n")
-        self.logger.info("Attempting to shut down the application...")
-        if self.top is not None:
-            self.top.close()
-        sys.exit()
+    # def exit(self):
+    #     """
+    #     Shuts down the application
+    #     """
+    #     import sys
+    #     self.console_box.append_text("Shutting down application.\n")
+    #     self.logger.info("Attempting to shut down the application...")
+    #     if self.top is not None:
+    #         self.top.close()
+    #     sys.exit()
 
     def set_qrun_id(self, qrun_id):
         """
@@ -307,18 +302,18 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.length_check = False
         for filename in self.storage_list:
 
-            # ex: filename = HPX_00887_RA_203.6_DEC_+58.9_mjdalltracks.json,
-            #     filename[:-len(JSON_EXTENSION)] = HPX_00887_RA_203.6_DEC_+58.9
+            # ex: filename = HPX_00887_RA_203.6_DEC_+58.9_bk.json,
+            #     filename[:-len(storage.MOVING_TARGET_VERSION)] = HPX_00887_RA_203.6_DEC_+58.9
             # sub_directory will be the directory where a candidate's .ast files are written
-            sub_directory = filename[:-len(JSON_EXTENSION)]
+            sub_directory = filename[:-len(storage.MOVING_TARGET_VERSION + '.json')]
             count += 1
 
             # if the file extension is in the filename, then it is a file containing candidate information
-            if JSON_EXTENSION in filename:
+            if storage.MOVING_TARGET_VERSION in filename:
                 x = re.match('(?P<hpx>HPX_)(?P<pixel>\d{5})(?P<leftover>_.*)', filename)
 
                 if self.pixel is not None and int(x.group('pixel')) < self.pixel:
-                    continue  # skipping over json files until the specified one has been reached
+                    continue  # skipping over json files until the specified catalog has been reached
 
                 # if the sub directory exists, we will have to check that all the candidates have been investigated
                 elif sub_directory in self.storage_list:
@@ -330,7 +325,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 return int(x.group('pixel'))
         return 0
 
-    def set_candidate(self, event):
+    def set_pixel(self, event):
         """
         Sets the pixel for the current Candidate set.
 
@@ -361,6 +356,34 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         try:
             self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
+
+            if self.length_check:
+                count = 0
+                # counting the total amount of candidates that are in self.candidates
+                for _ in self.candidates:
+                    count += 1
+
+                # re-set self.candidates since the for loop removes all its candidates in a dequeuing fashion
+                self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
+                # the amount of files in the accompanying subdirectory for the .json candidate file
+                directory_length = len(storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
+                                                                    storage.CATALOG,
+                                                                    self.qrun_id,
+                                                                    self.candidates.catalog.catalog.dataset_name),
+                                                       force=True))
+
+                if count == directory_length:
+                    self.console_box.append_text("Candidate set {} fully examined.\n".format(self.pixel))
+                    self.load_candidates()
+                    return
+                elif count > directory_length:
+                    self.console_box.append_text("Candidate set {} not fully examined.\n".format(self.pixel))
+
+                else:
+                    logging.error("Value error: count {} or directory_length {} is out of range."
+                                  .format(count, directory_length))
+                    raise ValueError
+
         except Exception as ex:
             self.console_box.append_text("Failed to load candidates: {} \n".format(str(ex)))
             if isinstance(ex, StopIteration):
@@ -373,9 +396,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.logger.warning("Launching image prefetching. Please be patient.\n")
 
         with self.lock:
-            count = 0
             for obs_records in self.candidates:
-                count += 1
                 previous_record = None
                 for obs_record in obs_records:
                     assert isinstance(obs_record, ObsRecord)
@@ -383,7 +404,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     if key not in self.image_list:
                         self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
 
-                    # Check if we should  load a comparison for the previous image.
+                    # Check if we should load a comparison for the previous image.
                     if previous_record is not None:
                         offset = obs_record.coordinate.separation(previous_record.coordinate)
                         if offset > storage.CUTOUT_RADIUS:
@@ -408,24 +429,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
         self.candidate = None  # reset on candidate to clear it of any leftover from previous sets
-        if self.length_check:
-            # if the amount of candidate sets is less than the amount of files in that directory
-            directory_length = len(storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
-                                                                storage.CATALOG,
-                                                                self.qrun_id,
-                                                                self.candidates.catalog.catalog.dataset_name),
-                                                   force=True))
-            # count is being  determined when all the candidates are being loaded. If the count could be set
-            #  when self.candidates is set, a lot of time could be saved by doing this check immediately after setting
-            #  self.candidates. The length is stored deep within candidates in a dictionary which might be difficult
-            #  to extract consistently.
-            if count == directory_length:
-                self.console_box.append_text("Candidate set {} fully examined.\n".format(self.pixel))
-                self.load_candidates()
-                return
-            elif count > directory_length:
-                self.console_box.append_text("Candidate set {} not fully examined.\n".format(self.pixel))
-
         self.load()
 
     def reload_candidates(self):
@@ -485,7 +488,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         #  following have also not been investigated. In the case where following candidates have been investigated
         #  and written to file, length_check should not be reset to false here. This reset is simply so the check above
         #  does not have to be completed every single time, since it can be expensive (specially when force=True,
-        #  since the goes to the server each time).
+        #  since it goes to the server each time).
         self.length_check = False
         while True:
             # noinspection PyBroadException
