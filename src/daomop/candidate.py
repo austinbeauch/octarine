@@ -15,9 +15,14 @@ def provisional(mjd, hpx, count):
     """Compute a provisional name from the date and HPX information.
 
     """
-    disco = Time(int(mjd), format='mjd').to_datetime()
-    yr = disco.year - 2000
-    dy = _LETTERS[disco.day // 14]
+    discovery_date = Time(mjd, format='mdj').yday.split(':')
+    discovery_day = discovery_date[1]
+    discovery_year = discovery_date[0]
+
+    yr = discovery_year - 2000
+    p1 = discovery_day//36
+    p2 = discovery_day - p1*36
+    dy = (_DIGITS + _LETTERS)[p1] + (_DIGITS + _LETTERS)[p2]
     p1 = count
     s2 = ""
     logging.info("Loading candidate : {}".format(count))
@@ -26,7 +31,7 @@ def provisional(mjd, hpx, count):
         s2 += (_DIGITS + _LETTERS)[p1 - p2 * 36]
         p1 = p2
     s1 = (_DIGITS + _LETTERS)[p1]
-    return "c{:02}{:1}{:04}{:1}{:1}".format(yr, dy, hpx, s1, s2)
+    return "c{:02}{:2}{:04}{:1}{:1}".format(yr, dy, hpx, s1, s2)
 
 
 class ObservationSet(object):
@@ -107,6 +112,7 @@ class Target(object):
 class Catalog(object):
     def __init__(self, pixel, catalog_dir=None):
         self.catalog = storage.JSONCatalog(pixel, catalog_dir=catalog_dir)
+        self.current_date = -1
         self.current_target = -1
 
     def __iter__(self):
@@ -121,17 +127,17 @@ class Catalog(object):
 
         :rtype: Target
         """
-        self.current_target += 1
-        if not self.current_target < len(self.mjdates):
+        self.current_date += 1
+        if not self.current_date < len(self.mjdates):
             raise StopIteration
-        mjdate = self.mjdates[self.current_target]
+        mjdate = self.mjdates[self.current_date]
         return Target(self.catalog.pixel, mjdate, self.catalog.json[mjdate])
 
     def previous(self):
-        if self.current_target == 0:
+        if self.current_date == 0:
             return
-        self.current_target -= 1
-        mjdate = self.mjdates[self.current_target]
+        self.current_date -= 1
+        mjdate = self.mjdates[self.current_date]
         return Target(self.catalog.pixel, mjdate, self.catalog.json[mjdate])
 
 

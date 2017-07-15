@@ -90,7 +90,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.storage_list = None
         self.length_check = False
         self.qrun_id = ''
-        self.pixels = []
+        # self.pixels = []  # used in self.pixel_list()
 
         # GUI elements
         self.pixel_base = 1.0
@@ -106,6 +106,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.legend.set_text(LEGEND)
         self.build_gui(self.top)
         self.comparison_images = {}
+        self.null_observation = {}
         self.next_image = None
 
     def build_gui(self, container):
@@ -134,7 +135,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         candidate_set.add_callback('activated', lambda x: self.set_pixel(event=x))
         candidate_set.set_length(6)
 
-        catalog = Widgets.TextEntrySet(text='17AQ06')
+        catalog = Widgets.TextEntrySet(text='17AQ10')
         catalog.add_callback('activated', lambda x: self.set_qrun_id(x))
         catalog.set_length(5)
 
@@ -291,7 +292,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.qrun_id = qrun_id.text
         self.storage_list = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
                                                          storage.CATALOG,
-                                                         self.qrun_id))
+                                                         self.qrun_id), force=True)
         self.load_json.set_enabled(True)
         self.console_box.append_text("QRUNID set to {}. \n".format(self.qrun_id))
 
@@ -425,18 +426,21 @@ class ValidateGui(ipg.EnhancedCanvasView):
                             previous_key = self.downloader.image_key(previous_record)
                             comparison = storage.get_comparison_image(previous_record.coordinate,
                                                                       previous_record.date.mjd)
+                            frame = "{}{}".format(comparison[0]['observationID'], 'p00')
                             comparison_obs_record = ObsRecord(null_observation=True,
                                                               provisional_name=previous_record.provisional_name,
                                                               date=Time(comparison[0]['mjdate'], format='mjd',
                                                                         precision=5).mpc,
                                                               ra=previous_record.coordinate.ra.degree,
                                                               dec=previous_record.coordinate.dec.degree,
-                                                              frame=comparison[0]['observationID'],
+                                                              frame=frame,
                                                               comment=previous_key)
                             key = self.downloader.image_key(comparison_obs_record)
+                            self.null_observation[key] = comparison_obs_record
                             self.comparison_images[previous_key] = key
                             if key not in self.image_list:
-                                self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
+                                self.image_list[key] = self.pool.apply_async(self.downloader.get,
+                                                                             (comparison_obs_record,))
 
                     previous_record = obs_record
 
@@ -485,39 +489,14 @@ class ValidateGui(ipg.EnhancedCanvasView):
         # loads first candidate
         if self.candidate is None:
             self.next()
-
+        key = self.key
         while True:
             # noinspection PyBroadException
             try:
-                if self.next_image is not None:
-                    key = self.next_image
-                else:
-                    key = self.downloader.image_key(self.candidate[self.obs_number])
-
-                with self.lock:
-                    hdu = (isinstance(self.image_list[key], ApplyResult) and self.image_list[key].get()
-                           or self.image_list[key])
-                    self.image_list[key] = hdu
-
                 if key not in self.astro_images:
                     image = AstroImage.AstroImage(logger=self.logger)
 
-                    # TODO: Fix mark_aperture for MEF
-                    if len(self.image_list[key]) > 1:
-                        image.load_hdu(self.image_list[key][1])
-
-                        # first image loaded, need to mosaic all other images in with the first image
-                        img_list = [AstroImage.AstroImage(logger=self.logger) for _ in
-                                    range(len(self.image_list[key]) - 2)]
-
-                        # offset by 2 because index 0 is PrimaryHDU (no PV keywords) and index 1 has already been loaded
-                        for index, img in enumerate(img_list):
-                            img.load_hdu(self.image_list[key][index+2])
-
-                        image.mosaic_inline(img_list)
-
-                    else:
-                        image.load_hdu(self.image_list[key][0])
+                    image.load_hdu(self.loaded_hdu)
 
                     self.astro_images[key] = image
 
@@ -540,7 +519,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if self.center is not None:
             self._align()
 
-        self._mark_aperture()
+        # the image cutout is considered the first object on the canvas, this deletes everything over top of it
+        self.canvas.delete_objects(self.canvas.get_objects()[1:])
+        if key not in self.null_observation:
+            self._mark_aperture()
         self.header_box.set_text("Header:\n" + self.info)
         self.console_box.append_text("Loaded: {}\n".format(self.candidate[self.obs_number].comment.frame))
 
@@ -582,9 +564,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Draws a red circle on the drawing canvas in the viewing window around the celestial object detected.
         """
-        # the image cutout is considered the first object on the canvas, this deletes everything over top of it
-        self.canvas.delete_objects(self.canvas.get_objects()[1:])
-
         ra = self.candidate[self.obs_number].coordinate.ra
         dec = self.candidate[self.obs_number].coordinate.dec
         x, y = WCS(self.header).all_world2pix(ra, dec, 0)
@@ -692,23 +671,40 @@ class ValidateGui(ipg.EnhancedCanvasView):
             return self._center
 
     @property
+    def key(self):
+        if self.next_image is not None:
+            key = self.next_image
+        else:
+            key = self.downloader.image_key(self.candidate[self.obs_number])
+        return key
+
+    @property
     def loaded_hdu(self):
         """
         Return current HDU
         """
-        hdu_list = self.downloader.get(self.candidate[self.obs_number])
+        key = self.key
+        with self.lock:
+            hdu = (isinstance(self.image_list[key], ApplyResult) and self.image_list[key].get()
+                   or self.image_list[key])
+            self.image_list[key] = hdu
 
-        if len(hdu_list) > 1:
-            return hdu_list[2]  # Return index 2 if multi extension file? Possibly. Could use index 2 as reference.
-
-        return hdu_list[0]
+        load_hdu = max_size = None
+        for hdu in self.image_list[key]:
+            if hdu.header['NAXIS'] == 0:
+                continue
+            size = hdu.header['NAXIS1'] * hdu.header['NAXIS2']
+            if max_size is None or size > max_size:
+                max_size = size
+                load_hdu = hdu
+        return load_hdu
 
     @property
     def header(self):
         """
         Return current HDU's header
         """
-        return self.loaded_hdu.header
+        return self.astro_images[self.key].get_header()
 
     @property
     def info(self):
