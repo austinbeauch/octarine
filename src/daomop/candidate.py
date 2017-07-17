@@ -13,11 +13,10 @@ _DIGITS = '0123456789'
 
 def provisional(mjd, hpx, count):
     """Compute a provisional name from the date and HPX information.
-
     """
-    discovery_date = Time(mjd, format='mdj').yday.split(':')
-    discovery_day = discovery_date[1]
-    discovery_year = discovery_date[0]
+    discovery_date = Time(int(mjd), format='mjd').yday.split(':')
+    discovery_day = int(discovery_date[1])
+    discovery_year = int(discovery_date[0])
 
     yr = discovery_year - 2000
     p1 = discovery_day//36
