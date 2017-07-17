@@ -59,7 +59,7 @@ class Downloader(object):
         logging.debug("Retrieving {}".format(self.image_key(obs_record)))
         try:
             image = storage.FitsImage.from_frame(obs_record.comment.frame)
-            hdu_list = image.ra_dec_cutout(obs_record.coordinate)
+            hdu_list = image.ra_dec_cutout(obs_record.coordinate, trim_to_datasec=True)
         except Exception as ex:
             logging.debug(ex)
             raise ex
