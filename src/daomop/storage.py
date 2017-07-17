@@ -13,10 +13,12 @@ from astropy.coordinates import SkyCoord
 from astropy import units
 from astropy.table import Table
 from astropy.io import fits, ascii
+from astropy.io.fits import PrimaryHDU
 from astropy.time import Time
 from cadcutils.exceptions import BadRequestException, AlreadyExistsException, NotFoundException
 from numpy.linalg import LinAlgError
 from sip_tpv import pv_to_sip
+from copy import deepcopy
 from . import util
 import vospace
 from wcs import WCS
@@ -639,7 +641,7 @@ class FitsImage(FitsArtifact):
         copy(uri, filename)
         return open(filename).read()
 
-    def cutout(self, cutout, return_file=False, trim_to_datasec=False):
+    def cutout(self, cutout, return_file=False, convert_to_sip=True):
         """
         Given a string such as '[CCD]', '[CCD][x1:x2,y1:y2]', or '(RA,DEC,RADIUS)', 
          retrieve that portion of the image from VOSpace.
@@ -656,6 +658,7 @@ class FitsImage(FitsArtifact):
          and a radius of 0.0166666666667 degrees (the default amount, which is set to one arcminute - 1/60 of a degree) 
                 
         :param cutout: a string specifying which part of the exposure to return
+        :param convert_to_sip: Should we convert the header keywords to SIP format?
         :param return_file
         :return:
         """
@@ -668,15 +671,12 @@ class FitsImage(FitsArtifact):
                 return fits.open(self.filename)
 
         fpt = tempfile.NamedTemporaryFile(suffix='.fits')
-        cutout_list = []
         try:
-            content_disposition = copy(self.uri + cutout, fpt.name)
-            cutout_list = decompose_content_decomposition(content_disposition)
+            copy(self.uri + cutout, fpt.name)
         except BadRequestException as bre:
             if "No matching data" in str(bre):
                 logging.error(str(bre))
                 return []
-            raise bre
         except NotFoundException:
             self._ext = ".fits"
             copy(self.uri + cutout, fpt.name)
@@ -685,36 +685,38 @@ class FitsImage(FitsArtifact):
         hdu_list = fits.open(fpt, scale_back=False)
         hdu_list.verify('silentfix+ignore')
 
-        for hdu in hdu_list:
-            if hdu.header['NAXIS'] == 0:
-                continue
-            try:
-                cutout = cutout_list.pop(0)
-                cutout = "[{}:{},{}:{}]".format(cutout[1], cutout[2], cutout[3], cutout[4])
-            except:
-                break
-            hdu.header['DATASEC'] = reset_datasec(cutout,
-                                                  hdu.header['DATASEC'],
-                                                  hdu.header['NAXIS1'],
-                                                  hdu.header['NAXIS2'])
-            if trim_to_datasec:
-                datasec = hdu.header['DATASEC'][1:-1].replace(':', ',').split(',')
-                d = map(int, datasec)
-                hdu.data = hdu.data[d[2] - 1:d[3], d[0] - 1:d[1]]
-                hdu.header['CRPIX1'] = hdu.header.get('CRPIX1', 0) - (d[0] - 1)
-                hdu.header['CRPIX2'] = hdu.header.get('CRPIX2', 0) - (d[0] - 1)
+        # hdu_list[0].header['DATASEC'] = reset_datasec(cutout,
+        #                                               hdu_list[0].header['DATASEC'],
+        #                                               hdu_list[0].header['NAXIS1'],
+        #                                               hdu_list[0].header['NAXIS2'])
 
         if not hdu_list:
             raise OSError(errno.EFAULT, "Failed to retrieve cutout of image", self.uri)
 
-        # transform PV keywords to SIP in non-empty hdu.
-        for hdu in hdu_list:
-            if hdu.header["NAXIS"] == 0 and "NORDFIT" not in hdu.header:
-                continue
-            try:
-                pv_to_sip(hdu.header)
-            except LinAlgError as lin_alg_error:
-                logging.error("PV_TO_SIP FAILED: {}".format(lin_alg_error))
+        # if the hdu_list has more than one entry, it's a multi extension file. First item in the list is the
+        # PrimaryHDU which contains no PV keywords (so it is skipped over) and the next ones are ImageHDU's
+        # which do contain PV keywords.
+        # TODO: Add more rigorous testing to see if hdu_list contains a multi extension file?
+        if len(hdu_list) > 1:
+            for index, hdu in enumerate(hdu_list):
+                if isinstance(hdu, PrimaryHDU):  # skip over primaryHDU (contains no PV keywords)
+                    continue
+                header = deepcopy(hdu_list[index].header)
+                if convert_to_sip:
+                    try:
+                        pv_to_sip(header)
+                        hdu.header = header
+                    except LinAlgError as lin_alg_error:
+                        logging.error("PV_TO_SIP FAILED: {}".format(lin_alg_error))
+
+        else:
+            header = deepcopy(hdu_list[0].header)
+            if convert_to_sip:
+                try:
+                    pv_to_sip(header)
+                    hdu_list[0].header = header
+                except LinAlgError as lin_alg_error:
+                    logging.error("PV_TO_SIP FAILED: {}".format(lin_alg_error))
 
         if self.ccd is None:
             # build a list of CCD headers as we didn't do a CCD based cutout so need an MEF of headers.
@@ -782,9 +784,9 @@ class FitsImage(FitsArtifact):
 
         ccd = "[{}]".format(self.ccd+1)
 
-        return self.cutout(cutout=ccd, return_file=return_file)
+        return self.cutout(cutout=ccd, return_file=return_file, convert_to_sip=convert_to_sip)
 
-    def ra_dec_cutout(self, skycoord, radius=CUTOUT_RADIUS, return_file=False, trim_to_datasec=False):
+    def ra_dec_cutout(self, skycoord, radius=CUTOUT_RADIUS, return_file=False, convert_to_sip=True):
         """
         Builds a cutout string from a SkyCoord object and a Quantity object.
         Calls cutout method to retrieve a sub-section of the image at the specified RA/DEC location.
@@ -797,6 +799,7 @@ class FitsImage(FitsArtifact):
         
         :param skycoord: SkyCoord object with associated RA and DEC attributes
         :param return_file: what to return? True: filename,  False: HDUList
+        :param convert_to_sip: convert header PV keywords to SIP version? 
         :param radius: astropy unit.Quantity object. Specifies radius of the cutout returned from VOSpace
         """
 
@@ -814,7 +817,7 @@ class FitsImage(FitsArtifact):
         # Formatting coordinates as decimal degrees into a string
         ra_dec = "({},{},{})".format(skycoord.ra.deg, skycoord.dec.deg, radius.to('degree').value)
 
-        return self.cutout(cutout=ra_dec, return_file=return_file, trim_to_datasec=trim_to_datasec)
+        return self.cutout(cutout=ra_dec, return_file=return_file, convert_to_sip=convert_to_sip)
 
 
 class HPXCatalog(FitsTable):
@@ -1345,15 +1348,11 @@ def isfile(uri):
 
 
 def copy(source, destination):
-    """Copy a file to/from VOSpace. With upto 10 retries on errors,
-
-    :return: content disposition value from data service
-    :rtype: basestring
-    """
+    """Copy a file to/from VOSpace. With upto 10 retries on errors"""
     count = 1
     while True:
         try:
-            return vospace.client.copy(source, destination, disposition=True)
+            return vospace.client.copy(source, destination)
         except OSError as ex:
             if ex.errno == errno.ENOENT:
                 raise ex
