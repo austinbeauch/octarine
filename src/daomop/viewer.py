@@ -373,9 +373,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
                                                              self.qrun_id,
                                                              self.candidates.catalog.catalog.dataset_name),
                                                 force=True)
-                x = self.override+'.ast'
-                if x in sub_directory:
-                    self.console_box.append_text("Overriding {}.\n".format(x))
+                if self.override is not None:
+                    x = self.override+'.ast'
+                    if x in sub_directory:
+                        self.console_box.append_text("Overriding {}.\n".format(x))
                 else:
                     count = 0
                     # counting the total amount of candidates that are in self.candidates
