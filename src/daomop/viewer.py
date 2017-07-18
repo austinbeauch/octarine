@@ -460,6 +460,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.console_box.append_text('Reloading all candidates...\n')
             self.pool.terminate()
             self.pool = Pool(processes=PROCESSES)
+            self.next_set.set_enabled(True)
+            self.previous_set.set_enabled(True)
+            self.accept.set_enabled(True)
+            self.reject.set_enabled(True)
             self.load_candidates(self.pixel)
             self.next()
 
@@ -664,6 +668,24 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.zoom = self.get_zoom()
         self.obs_number %= len(self.candidate)
         self._load()
+
+    def clear_candidate_images(self):
+        """
+        Clear all the images associated with a candidate.
+        :return:
+        """
+        if self.candidate is None:
+            return
+        for obs_record in self.candidate:
+            key = self.downloader.image_key(obs_record)
+            del(self.image_list[key])
+            if key in self.astro_images:
+                del(self.astro_images[key])
+            if key in self.comparison_images:
+                comp_key = self.comparison_images[key]
+                del(self.image_list[comp_key])
+                if comp_key in self.astro_images:
+                    del(self.astro_images[comp_key])
 
     @property
     def center(self):
