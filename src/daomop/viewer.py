@@ -216,10 +216,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if self.candidates is not None:
             # noinspection PyBroadException
             try:
-                self.next_set.set_enabled(False)
-                self.previous_set.set_enabled(False)
-                self.accept.set_enabled(False)
-                self.reject.set_enabled(False)
+                self.buttons_off()
                 self.obs_number = 0
                 self.next_image = None
                 self.clear_candidate_images()
@@ -243,10 +240,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                         return
 
                 self.load()
-                self.next_set.set_enabled(True)
-                self.previous_set.set_enabled(True)
-                self.accept.set_enabled(True)
-                self.reject.set_enabled(True)
+                self.buttons_on()
             except Exception as ex:
                 self.console_box.append_text('Loading next candidate set failed.\n')
                 if isinstance(ex, StopIteration):
@@ -260,18 +254,12 @@ class ValidateGui(ipg.EnhancedCanvasView):
         Load the previous set of images into the viewer
         """
         if self.candidates is not None:
-            self.next_set.set_enabled(False)
-            self.previous_set.set_enabled(False)
-            self.accept.set_enabled(False)
-            self.reject.set_enabled(False)
+            self.buttons_off()
             self.obs_number = 0
             self.candidate = self.candidates.previous()
             if self.candidate is not None:
                 self.load()
-            self.previous_set.set_enabled(True)
-            self.next_set.set_enabled(True)
-            self.accept.set_enabled(True)
-            self.reject.set_enabled(True)
+            self.buttons_on()
 
     def accept_reject(self, rejected=False):
         """
@@ -485,10 +473,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.console_box.append_text('Reloading all candidates...\n')
             self.pool.terminate()
             self.pool = Pool(processes=PROCESSES)
-            self.next_set.set_enabled(True)
-            self.previous_set.set_enabled(True)
-            self.accept.set_enabled(True)
-            self.reject.set_enabled(True)
+            self.buttons_on()
             self.load_candidates(self.pixel)
             self.next()
 
@@ -521,11 +506,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
         # loads first candidate
         if self.candidate is None:
             self.next()
+            return
         key = self.key
         while True:
             # noinspection PyBroadException
             try:
                 if key not in self.astro_images:
+                    # TODO: MEF
                     image = AstroImage.AstroImage(logger=self.logger)
                     image.load_hdu(self.loaded_hdu)
                     self.astro_images[key] = image
@@ -537,9 +524,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 self.console_box.append_text(str(ex) + '\n')
                 self.console_box.append_text("Skipping candidate {} due to load failure\n"
                                              .format(self.candidate[0].provisional_name))
-                self.logger.debug(str(ex))
-                self.logger.debug("Skipping candidate {} due to load failure\n".format(self.obs_number))
                 self.next()
+                return
 
         if self.zoom is not None:
             self.zoom_to(self.zoom)
@@ -703,14 +689,34 @@ class ValidateGui(ipg.EnhancedCanvasView):
             return
         for obs_record in self.candidate:
             key = self.downloader.image_key(obs_record)
-            del(self.image_list[key])
+            if key in self.image_list:
+                del(self.image_list[key])
             if key in self.astro_images:
                 del(self.astro_images[key])
             if key in self.comparison_images:
                 comp_key = self.comparison_images[key]
-                del(self.image_list[comp_key])
+                if comp_key in self.comparison_images:
+                    del(self.image_list[comp_key])
                 if comp_key in self.astro_images:
                     del(self.astro_images[comp_key])
+
+    def buttons_on(self):
+        """
+        Activate all GUI buttons
+        """
+        self.next_set.set_enabled(True)
+        self.previous_set.set_enabled(True)
+        self.accept.set_enabled(True)
+        self.reject.set_enabled(True)
+
+    def buttons_off(self):
+        """
+        Deactivate all GUI buttons
+        """
+        self.next_set.set_enabled(False)
+        self.previous_set.set_enabled(False)
+        self.accept.set_enabled(False)
+        self.reject.set_enabled(False)
 
     @property
     def center(self):
@@ -733,10 +739,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Return current HDU
         """
+        # TODO: MEF
         key = self.key
         with self.lock:
             hdu = (isinstance(self.image_list[key], ApplyResult) and self.image_list[key].get()
                    or self.image_list[key])
+            if isinstance(hdu, ApplyResult):
+                self.console_box.append_text("Loaded HDU is Apply result instance, not an HDU.\n")
             self.image_list[key] = hdu
 
         load_hdu = max_size = None
