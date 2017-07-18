@@ -221,6 +221,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 self.accept.set_enabled(False)
                 self.reject.set_enabled(False)
                 self.obs_number = 0
+                self.next_image = None
+                self.clear_candidate_images()
                 self.candidate = self.candidates.next()
 
                 # Checks if candidate has already been examined with a file written on VOSpace.
@@ -415,6 +417,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         with self.lock:
             for obs_records in self.candidates:
                 previous_record = None
+                previous_offset = 2*storage.CUTOUT_RADIUS
+                offset = previous_offset
                 for obs_record in obs_records:
                     assert isinstance(obs_record, ObsRecord)
                     key = self.downloader.image_key(obs_record)
@@ -424,7 +428,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     # Check if we should load a comparison for the previous image.
                     if previous_record is not None:
                         offset = obs_record.coordinate.separation(previous_record.coordinate)
-                        if offset > storage.CUTOUT_RADIUS:
+                        if offset > storage.CUTOUT_RADIUS and previous_offset > storage.CUTOUT_RADIUS:
                             # Insert a blank image in the list
                             previous_key = self.downloader.image_key(previous_record)
                             comparison = storage.get_comparison_image(previous_record.coordinate,
@@ -446,6 +450,27 @@ class ValidateGui(ipg.EnhancedCanvasView):
                                                                              (comparison_obs_record,))
 
                     previous_record = obs_record
+                    previous_offset = offset
+                # Check if the offset between the last record and the one just before it was large.
+                if previous_offset > storage.CUTOUT_RADIUS and previous_record is not None:
+                    previous_key = self.downloader.image_key(previous_record)
+                    comparison = storage.get_comparison_image(previous_record.coordinate,
+                                                              previous_record.date.mjd)
+                    frame = "{}{}".format(comparison[0]['observationID'], 'p00')
+                    comparison_obs_record = ObsRecord(null_observation=True,
+                                                      provisional_name=previous_record.provisional_name,
+                                                      date=Time(comparison[0]['mjdate'], format='mjd',
+                                                                precision=5).mpc,
+                                                      ra=previous_record.coordinate.ra.degree,
+                                                      dec=previous_record.coordinate.dec.degree,
+                                                      frame=frame,
+                                                      comment=previous_key)
+                    key = self.downloader.image_key(comparison_obs_record)
+                    self.null_observation[key] = comparison_obs_record
+                    self.comparison_images[previous_key] = key
+                    if key not in self.image_list:
+                        self.image_list[key] = self.pool.apply_async(self.downloader.get,
+                                                                     (comparison_obs_record,))
 
         self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
         self.candidate = None  # reset on candidate to clear it of any leftover from previous sets
