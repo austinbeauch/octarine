@@ -1,6 +1,5 @@
 import os
 import re
-import sys
 import logging
 from multiprocessing.dummy import Pool, Lock
 from math import atan2, degrees
@@ -22,8 +21,9 @@ DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
 LEGEND = 'Keyboard Shortcuts: \n' \
          'f: image backwards \n' \
          'g: image forwards \n' \
-         't: contrast mode \n(right click on canvas after pressing "t" to reset contrast)\n'
-JSON_EXTENSION = '_mjdalltracks.json'
+         'q: pan mode \n(click and drag on canvas)\n' \
+         't: contrast mode \n(right click on canvas after pressing "t" to reset contrast)\n' \
+         'esc: reset keyboard mode\n'
 PROCESSES = 5
 
 
@@ -88,22 +88,25 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self._center = None
         self.pixel = None
         self.storage_list = None
+        self.length_check = False
         self.qrun_id = ''
-        self.pixels = []
+        # self.pixels = []  # used in self.pixel_list()
 
         # GUI elements
         self.pixel_base = 1.0
         self.readout = Widgets.Label("")
         self.header_box = Widgets.TextArea(editable=False)
+        self.accept = Widgets.Button("Accept")
+        self.reject = Widgets.Button("Reject")
         self.next_set = Widgets.Button("Next Set >")
         self.previous_set = Widgets.Button("< Previous Set")
         self.load_json = Widgets.Button("Load")
-        self.load_json.add_callback('activated', lambda x: self.load_candidates())
 
         self.legend = Widgets.TextArea(wrap=True)
         self.legend.set_text(LEGEND)
         self.build_gui(self.top)
         self.comparison_images = {}
+        self.null_observation = {}
         self.next_image = None
 
     def build_gui(self, container):
@@ -129,19 +132,16 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.set_callback('cursor-changed', self.motion_cb)
 
         candidate_set = Widgets.TextEntry()
-        candidate_set.add_callback('activated', lambda x: self.set_candidate(event=x))
+        candidate_set.add_callback('activated', lambda x: self.set_pixel(event=x))
         candidate_set.set_length(6)
 
-        catalog = Widgets.TextEntrySet(text='testing')
+        catalog = Widgets.TextEntrySet(text='17AQ10')
         catalog.add_callback('activated', lambda x: self.set_qrun_id(x))
         catalog.set_length(5)
 
-        accept = Widgets.Button("Accept")
-        accept.add_callback('activated', lambda x: self.accept_reject())
-
-        reject = Widgets.Button("Reject")
-        reject.add_callback('activated', lambda x: self.accept_reject(rejected=True))
-
+        self.accept.add_callback('activated', lambda x: self.accept_reject())
+        self.reject.add_callback('activated', lambda x: self.accept_reject(rejected=True))
+        self.load_json.add_callback('activated', lambda x: self.load_candidates())
         self.next_set.add_callback('activated', lambda x: self.next())
         self.previous_set.add_callback('activated', lambda x: self.previous())
 
@@ -154,8 +154,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         # accept/reject/next buttons
         buttons_hbox = Widgets.HBox()
         buttons_hbox.add_widget(self.previous_set)
-        buttons_hbox.add_widget(accept)
-        buttons_hbox.add_widget(reject)
+        buttons_hbox.add_widget(self.accept)
+        buttons_hbox.add_widget(self.reject)
         buttons_hbox.add_widget(self.next_set)
         buttons_hbox.add_widget(self.load_json)
         self.load_json.set_enabled(False)
@@ -214,14 +214,37 @@ class ValidateGui(ipg.EnhancedCanvasView):
             # noinspection PyBroadException
             try:
                 self.next_set.set_enabled(False)
+                self.previous_set.set_enabled(False)
+                self.accept.set_enabled(False)
+                self.reject.set_enabled(False)
                 self.obs_number = 0
+                self.next_image = None
+                self.clear_candidate_images()
                 self.candidate = self.candidates.next()
+
+                # Checks if candidate has already been examined with a file written on VOSpace.
+                # length_check is necessary because it means the sub directory exists, if it doesn't an error will be
+                # thrown when looking in the directory list.
+                if self.length_check and self.candidate[0].provisional_name + '.ast' in storage.listdir(
+                        os.path.join(os.path.dirname(storage.DBIMAGES),
+                                     storage.CATALOG, self.qrun_id,
+                                     self.candidates.catalog.catalog.dataset_name), force=True):
+                    self.console_box.append_text("Candidate {} has been investigated.\n"
+                                                 .format(self.candidate[0].provisional_name))
+                    self.next()
+                    return
+
                 self.load()
                 self.next_set.set_enabled(True)
+                self.previous_set.set_enabled(True)
+                self.accept.set_enabled(True)
+                self.reject.set_enabled(True)
             except Exception as ex:
                 self.console_box.append_text('Loading next candidate set failed.\n')
                 if isinstance(ex, StopIteration):
-                    self.console_box.append_text('StopIteration error: End of candidate set.\n')
+                    self.console_box.append_text('StopIteration error: End of candidate set.\n'
+                                                 'Hit "Load" button to move onto the next set.\n')
+                    self.previous_set.set_enabled(True)
                     self.load_json.set_enabled(True)
 
     def previous(self):
@@ -229,13 +252,18 @@ class ValidateGui(ipg.EnhancedCanvasView):
         Load the previous set of images into the viewer
         """
         if self.candidates is not None:
+            self.next_set.set_enabled(False)
             self.previous_set.set_enabled(False)
+            self.accept.set_enabled(False)
+            self.reject.set_enabled(False)
             self.obs_number = 0
             self.candidate = self.candidates.previous()
             if self.candidate is not None:
                 self.load()
             self.previous_set.set_enabled(True)
             self.next_set.set_enabled(True)
+            self.accept.set_enabled(True)
+            self.reject.set_enabled(True)
 
     def accept_reject(self, rejected=False):
         """
@@ -243,23 +271,21 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         :param rejected: whether the candidate set has been accepted or rejected
         """
-        if rejected:
-            self.console_box.append_text("Rejected.\n")
-        else:
-            self.console_box.append_text("Accepted.\n")
+        self.console_box.append_text("Rejected.\n") if rejected else self.console_box.append_text("Accepted.\n")
         if self.candidates is not None:
             self.write_record(rejected=rejected)
             self.next()
 
-    def exit(self):
-        """
-        Shuts down the application
-        """
-        self.console_box.append_text("Shutting down application.\n")
-        self.logger.info("Attempting to shut down the application...")
-        if self.top is not None:
-            self.top.close()
-        sys.exit()
+    # def exit(self):
+    #     """
+    #     Shuts down the application
+    #     """
+    #     import sys
+    #     self.console_box.append_text("Shutting down application.\n")
+    #     self.logger.info("Attempting to shut down the application...")
+    #     if self.top is not None:
+    #         self.top.close()
+    #     sys.exit()
 
     def set_qrun_id(self, qrun_id):
         """
@@ -268,9 +294,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.qrun_id = qrun_id.text
         self.storage_list = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
                                                          storage.CATALOG,
-                                                         self.qrun_id))
+                                                         self.qrun_id), force=True)
         self.load_json.set_enabled(True)
-        self.console_box.append_text("Run ID set. \n")
+        self.console_box.append_text("QRUNID set to {}. \n".format(self.qrun_id))
 
     # def pixel_list(self):
     #     """
@@ -284,23 +310,38 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
     def lookup(self):
         """
-        Looks up which pixel value does NOT have an accompanying directory in VOSpace. Any pixel value with a
-         directory corresponds to a candidate set which has already been examined.
-        """
-        # TODO: Check files in each directory to make sure it equals the length of the json file it's associated with
-        count = 0
-        for filename in self.storage_list:
-            count += 1
-            if JSON_EXTENSION in filename and filename[:-len(JSON_EXTENSION)] not in self.storage_list:
-                    x = re.match('(?P<hpx>HPX_)(?P<pixel>\d{5})(?P<leftover>_.*)', filename)
-                    if self.pixel is not None and int(x.group('pixel')) < self.pixel:
-                        continue
-                    self.storage_list = self.storage_list[count:]
-                    return int(x.group('pixel'))
+        Looks up which pixel value for candidate files in VOSpace.
 
+        :return pixel value for the candidate files; 0 if no candidate files have been found
+        """
+        count = 0
+        self.length_check = False
+        for filename in self.storage_list:
+
+            # ex: filename = HPX_00887_RA_203.6_DEC_+58.9_bk.json,
+            #     filename[:-len(storage.MOVING_TARGET_VERSION)] = HPX_00887_RA_203.6_DEC_+58.9
+            # sub_directory will be the directory where a candidate's .ast files are written
+            sub_directory = filename[:-len(storage.MOVING_TARGET_VERSION + '.json')]
+            count += 1
+
+            # if the file extension is in the filename, then it is a file containing candidate information
+            if storage.MOVING_TARGET_VERSION in filename:
+                x = re.match('(?P<hpx>HPX_)(?P<pixel>\d{5})(?P<leftover>_.*)', filename)
+
+                if self.pixel is not None and int(x.group('pixel')) < self.pixel:
+                    continue  # skipping over json files until the specified catalog has been reached
+
+                # if the sub directory exists, we will have to check that all the candidates have been investigated
+                elif sub_directory in self.storage_list:
+                    self.length_check = True
+
+                # TODO: go back to server for storage_list in case two people are actively writing from unique servers
+                # cutting down the storage list for further iterating
+                self.storage_list = self.storage_list[count:]
+                return int(x.group('pixel'))
         return 0
 
-    def set_candidate(self, event):
+    def set_pixel(self, event):
         """
         Sets the pixel for the current Candidate set.
 
@@ -309,6 +350,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if hasattr(event, 'text'):
             self.pixel = int(event.text)
             self.console_box.append_text("Set pixel as {}\n".format(self.pixel))
+            if self.qrun_id != '':
+                self.load_json.set_enabled(True)
 
     def load_candidates(self, pixel=None):
         """
@@ -322,18 +365,47 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.pixel = self.lookup()
 
         if self.pixel == 0:  # recursive base case (when there are no more open candidate sets in the VOSpace directory)
-            self.console_box.append_text("No more candidate sets for this Run ID.\n")
+            self.console_box.append_text("No more candidate sets for this QRUNID.\n")
             raise StopIteration
 
         self.console_box.append_text("Accepted candidate entry: {}\n".format(self.pixel))
 
         try:
             self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
+
+            if self.length_check:
+                count = 0
+                # counting the total amount of candidates that are in self.candidates
+                for _ in self.candidates:
+                    count += 1
+
+                # re-set self.candidates since the for loop removes all its candidates in a dequeuing fashion
+                self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
+                # the amount of files in the accompanying subdirectory for the .json candidate file
+                directory_length = len(storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
+                                                                    storage.CATALOG,
+                                                                    self.qrun_id,
+                                                                    self.candidates.catalog.catalog.dataset_name),
+                                                       force=True))
+
+                if count == directory_length:
+                    self.console_box.append_text("Candidate set {} fully examined.\n".format(self.pixel))
+                    self.load_candidates()
+                    return
+                elif count > directory_length:
+                    self.console_box.append_text("Candidate set {} not fully examined.\n".format(self.pixel))
+
+                else:
+                    logging.error("Value error: count {} or directory_length {} is out of range."
+                                  .format(count, directory_length))
+                    raise ValueError
+
         except Exception as ex:
             self.console_box.append_text("Failed to load candidates: {} \n".format(str(ex)))
             if isinstance(ex, StopIteration):
                 self.console_box.append_text('StopIteration error. Candidate set might be empty.\n')
                 self.load_candidates()  # recursive call to find next candidate which needs validation
+                return  # prevents further execution of this method
             else:
                 raise ex
 
@@ -342,37 +414,63 @@ class ValidateGui(ipg.EnhancedCanvasView):
         with self.lock:
             for obs_records in self.candidates:
                 previous_record = None
+                previous_offset = 2*storage.CUTOUT_RADIUS
+                offset = previous_offset
                 for obs_record in obs_records:
                     assert isinstance(obs_record, ObsRecord)
                     key = self.downloader.image_key(obs_record)
                     if key not in self.image_list:
                         self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
 
-                    # Check if we should  load a comparison for the previous image.
+                    # Check if we should load a comparison for the previous image.
                     if previous_record is not None:
                         offset = obs_record.coordinate.separation(previous_record.coordinate)
-                        if offset > storage.CUTOUT_RADIUS:
+                        if offset > storage.CUTOUT_RADIUS and previous_offset > storage.CUTOUT_RADIUS:
                             # Insert a blank image in the list
                             previous_key = self.downloader.image_key(previous_record)
                             comparison = storage.get_comparison_image(previous_record.coordinate,
                                                                       previous_record.date.mjd)
+                            frame = "{}{}".format(comparison[0]['observationID'], 'p00')
                             comparison_obs_record = ObsRecord(null_observation=True,
                                                               provisional_name=previous_record.provisional_name,
                                                               date=Time(comparison[0]['mjdate'], format='mjd',
                                                                         precision=5).mpc,
                                                               ra=previous_record.coordinate.ra.degree,
                                                               dec=previous_record.coordinate.dec.degree,
-                                                              frame=comparison[0]['observationID'],
+                                                              frame=frame,
                                                               comment=previous_key)
                             key = self.downloader.image_key(comparison_obs_record)
+                            self.null_observation[key] = comparison_obs_record
                             self.comparison_images[previous_key] = key
                             if key not in self.image_list:
-                                self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
+                                self.image_list[key] = self.pool.apply_async(self.downloader.get,
+                                                                             (comparison_obs_record,))
 
                     previous_record = obs_record
+                    previous_offset = offset
+                # Check if the offset between the last record and the one just before it was large.
+                if previous_offset > storage.CUTOUT_RADIUS and previous_record is not None:
+                    previous_key = self.downloader.image_key(previous_record)
+                    comparison = storage.get_comparison_image(previous_record.coordinate,
+                                                              previous_record.date.mjd)
+                    frame = "{}{}".format(comparison[0]['observationID'], 'p00')
+                    comparison_obs_record = ObsRecord(null_observation=True,
+                                                      provisional_name=previous_record.provisional_name,
+                                                      date=Time(comparison[0]['mjdate'], format='mjd',
+                                                                precision=5).mpc,
+                                                      ra=previous_record.coordinate.ra.degree,
+                                                      dec=previous_record.coordinate.dec.degree,
+                                                      frame=frame,
+                                                      comment=previous_key)
+                    key = self.downloader.image_key(comparison_obs_record)
+                    self.null_observation[key] = comparison_obs_record
+                    self.comparison_images[previous_key] = key
+                    if key not in self.image_list:
+                        self.image_list[key] = self.pool.apply_async(self.downloader.get,
+                                                                     (comparison_obs_record,))
 
         self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
-
+        self.candidate = None  # reset on candidate to clear it of any leftover from previous sets
         self.load()
 
     def reload_candidates(self):
@@ -413,41 +511,17 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.console_box.append_text("No candidates loaded.\n")
             return
 
+        # loads first candidate
         if self.candidate is None:
             self.next()
-
+        key = self.key
         while True:
             # noinspection PyBroadException
             try:
-                if self.next_image is not None:
-                    key = self.next_image
-                else:
-                    key = self.downloader.image_key(self.candidate[self.obs_number])
-
-                with self.lock:
-                    hdu = (isinstance(self.image_list[key], ApplyResult) and self.image_list[key].get()
-                           or self.image_list[key])
-                    self.image_list[key] = hdu
-
                 if key not in self.astro_images:
                     image = AstroImage.AstroImage(logger=self.logger)
 
-                    # TODO: Fix mark_aperture for MEF
-                    if len(self.image_list[key]) > 1:
-                        image.load_hdu(self.image_list[key][1])
-
-                        # first image loaded, need to mosaic all other images in with the first image
-                        img_list = [AstroImage.AstroImage(logger=self.logger) for _ in
-                                    range(len(self.image_list[key]) - 2)]
-
-                        # offset by 2 because index 0 is PrimaryHDU (no PV keywords) and index 1 has already been loaded
-                        for index, img in enumerate(img_list):
-                            img.load_hdu(self.image_list[key][index+2])
-
-                        image.mosaic_inline(img_list)
-
-                    else:
-                        image.load_hdu(self.image_list[key][0])
+                    image.load_hdu(self.loaded_hdu)
 
                     self.astro_images[key] = image
 
@@ -470,7 +544,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if self.center is not None:
             self._align()
 
-        self._mark_aperture()
+        # the image cutout is considered the first object on the canvas, this deletes everything over top of it
+        self.canvas.delete_objects(self.canvas.get_objects()[1:])
+        if key not in self.null_observation:
+            self._mark_aperture()
         self.header_box.set_text("Header:\n" + self.info)
         self.console_box.append_text("Loaded: {}\n".format(self.candidate[self.obs_number].comment.frame))
 
@@ -512,9 +589,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Draws a red circle on the drawing canvas in the viewing window around the celestial object detected.
         """
-        # the image cutout is considered the first object on the canvas, this deletes everything over top of it
-        self.canvas.delete_objects(self.canvas.get_objects()[1:])
-
         ra = self.candidate[self.obs_number].coordinate.ra
         dec = self.candidate[self.obs_number].coordinate.dec
         x, y = WCS(self.header).all_world2pix(ra, dec, 0)
@@ -613,6 +687,22 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.obs_number %= len(self.candidate)
         self._load()
 
+    def clear_candidate_images(self):
+        """
+        Clear all the images associated with a candidate.
+        :return:
+        """
+        if self.candidate is None:
+            return
+        for obs_record in self.candidate:
+            key = self.downloader.image_key(obs_record)
+            del(self.image_list[key])
+            del(self.astro_images[key])
+            if key in self.comparison_images:
+                comp_key = self.comparison_images[key]
+                del(self.image_list[comp_key])
+                del(self.astro_images[comp_key])
+
     @property
     def center(self):
         """
@@ -622,23 +712,40 @@ class ValidateGui(ipg.EnhancedCanvasView):
             return self._center
 
     @property
+    def key(self):
+        if self.next_image is not None:
+            key = self.next_image
+        else:
+            key = self.downloader.image_key(self.candidate[self.obs_number])
+        return key
+
+    @property
     def loaded_hdu(self):
         """
         Return current HDU
         """
-        hdu_list = self.downloader.get(self.candidate[self.obs_number])
+        key = self.key
+        with self.lock:
+            hdu = (isinstance(self.image_list[key], ApplyResult) and self.image_list[key].get()
+                   or self.image_list[key])
+            self.image_list[key] = hdu
 
-        if len(hdu_list) > 1:
-            return hdu_list[2]  # Return index 2 if multi extension file? Possibly. Could use index 2 as reference.
-
-        return hdu_list[0]
+        load_hdu = max_size = None
+        for hdu in self.image_list[key]:
+            if hdu.header['NAXIS'] == 0:
+                continue
+            size = hdu.header['NAXIS1'] * hdu.header['NAXIS2']
+            if max_size is None or size > max_size:
+                max_size = size
+                load_hdu = hdu
+        return load_hdu
 
     @property
     def header(self):
         """
         Return current HDU's header
         """
-        return self.loaded_hdu.header
+        return self.astro_images[self.key].get_header()
 
     @property
     def info(self):
