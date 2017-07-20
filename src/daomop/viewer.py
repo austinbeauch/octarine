@@ -81,6 +81,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
         # creating key-press event handling
         self.canvas.add_callback('key-press', self._key_press, 'key', self)
 
+        # remove callbacks for clicking on the canvas (which is over the viewer)
+        self.canvas.delete_callback('cursor-down')
+        self.canvas.delete_callback('cursor-up')
+
         self.obs_number = 0
         self.candidate = None
         self.candidates = None
@@ -148,9 +152,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.load_json.add_callback('activated', lambda x: self.load_candidates())
         self.next_set.add_callback('activated', lambda x: self.next())
         self.previous_set.add_callback('activated', lambda x: self.previous())
-
-        # quit_button = Widgets.Button("Quit")
-        # quit_button.add_callback('activated', lambda x: self.exit())
 
         reload_button = Widgets.Button("Reload")
         reload_button.add_callback('activated', lambda x: self.reload_candidates())
@@ -222,26 +223,16 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 self.clear_candidate_images()
                 self.candidate = self.candidates.next()
 
-                # Checks if candidate has already been examined with a file written on VOSpace.
-                # length_check is necessary because it means the sub directory exists, if it doesn't an error will be
-                # thrown when looking in the directory list.
-                if self.length_check and self.candidate[0].provisional_name + '.ast' in storage.listdir(
-                        os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG, self.qrun_id,
-                                     self.candidates.catalog.catalog.dataset_name), force=True):
-
-                    if self.override == self.candidate[0].provisional_name:
-                        self.console_box.append_text("Candidate {} being overridden for viewing.\n"
-                                                     .format(self.candidate[0].provisional_name))
-
-                    else:
-                        self.console_box.append_text("Candidate {} has been investigated.\n"
-                                                     .format(self.candidate[0].provisional_name))
-                        self.next()
-                        return
+                # finding next candidate to load depending on which .ast files are written
+                while True:
+                    if not self.ast_exists():
+                        break
+                    self.candidate = self.candidates.next()
 
                 self.console_box.append_text("Loading {}...\n".format(self.candidate[0].provisional_name))
                 self.load()
                 self.buttons_on()
+
             except Exception as ex:
                 self.console_box.append_text('Loading next candidate set failed.\n')
                 if isinstance(ex, StopIteration):
@@ -249,6 +240,29 @@ class ValidateGui(ipg.EnhancedCanvasView):
                                                  'Hit "Load" button to move onto the next set.\n')
                     self.previous_set.set_enabled(True)
                     self.load_json.set_enabled(True)
+
+    def ast_exists(self):
+        """
+        Checks if candidate has already been examined with a file written on VOSpace.
+        length_check is necessary because it means the sub directory exists, if it doesn't an error will be
+         thrown when looking in the directory list.
+
+        :return True is the .ast files exists and there is no viewing override, False otherwise
+        """
+        if self.length_check and self.candidate[0].provisional_name + '.ast' in storage.listdir(
+                os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG, self.qrun_id,
+                             self.candidates.catalog.catalog.dataset_name), force=True):
+
+            if self.override == self.candidate[0].provisional_name:
+                self.console_box.append_text("Candidate {} being overridden for viewing.\n"
+                                             .format(self.candidate[0].provisional_name))
+
+            else:
+                self.console_box.append_text("Candidate {} has been investigated.\n"
+                                             .format(self.candidate[0].provisional_name))
+                return True
+
+        return False
 
     def previous(self):
         """
@@ -366,9 +380,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
                                                              self.candidates.catalog.catalog.dataset_name),
                                                 force=True)
                 if self.override is not None:
-                    x = self.override+'.ast'
-                    if x in sub_directory:
-                        self.console_box.append_text("Overriding {}.\n".format(x))
+                    filename = self.override+'.ast'
+                    if filename in sub_directory:
+                        self.console_box.append_text("Overriding {}.\n".format(filename))
                 else:
                     count = 0
                     # counting the total amount of candidates that are in self.candidates
@@ -377,6 +391,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
                     # re-set self.candidates since the for loop removes all its candidates in a dequeuing fashion
                     self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
+
                     # the amount of files in the accompanying subdirectory for the .json candidate file
                     directory_length = len(sub_directory)
 
@@ -521,6 +536,22 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     self.astro_images[key] = image
 
                 self.set_image(self.astro_images[key])
+
+                if self.zoom is not None:
+                    self.zoom_to(self.zoom)
+
+                self._rotate()
+
+                if self.center is not None:
+                    self._align()
+
+                # the image cutout is considered the first object on the canvas, this deletes everything over top of it
+                self.canvas.delete_objects(self.canvas.get_objects()[1:])
+                if key not in self.null_observation:
+                    self._mark_aperture()
+
+                self.header_box.set_text("Header:\n" + self.info)
+                self.console_box.append_text("Loaded: {}\n".format(self.candidate[self.obs_number].comment.frame))
                 break
 
             except Exception as ex:
@@ -528,23 +559,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 self.console_box.append_text("Skipping candidate {} due to load failure\n"
                                              .format(self.candidate[0].provisional_name))
                 self.next()
-                return
-
-        if self.zoom is not None:
-            self.zoom_to(self.zoom)
-
-        self._rotate()
-
-        if self.center is not None:
-            self._align()
-
-        # the image cutout is considered the first object on the canvas, this deletes everything over top of it
-        self.canvas.delete_objects(self.canvas.get_objects()[1:])
-        if key not in self.null_observation:
-            self._mark_aperture()
-
-        self.header_box.set_text("Header:\n" + self.info)
-        self.console_box.append_text("Loaded: {}\n".format(self.candidate[self.obs_number].comment.frame))
 
     def _mark_aperture(self):
         """
@@ -585,7 +599,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.console_box.append_text(msg+"\n")
 
         except IOError as ex:
-            self.console_box.append_text("Unable to write to file.")
+            self.console_box.append_text("Unable to write to file.\n")
             self.console_box.append_text(str(ex) + '\n')
             raise ex
 

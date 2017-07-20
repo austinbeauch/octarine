@@ -6,7 +6,10 @@ from daomop import candidate
 
 
 class CandidateTest(unittest.TestCase):
-
+    """
+    Testing CandidateSet object from candidate.py. Test revolve around the next() method which returns the next
+     set of candidates.
+    """
     def setUp(self):
         # assuming that vos:/cfis/solar_system/catalogs/17AQ06 still exists
         self.candidates = candidate.CandidateSet(2434, catalog_dir='17AQ06')
