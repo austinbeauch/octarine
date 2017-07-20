@@ -131,11 +131,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         self.set_callback('cursor-changed', self.motion_cb)
 
-        candidate_set = Widgets.TextEntry()
+        candidate_set = Widgets.TextEntrySet()
         candidate_set.add_callback('activated', lambda x: self.set_pixel(event=x))
         candidate_set.set_length(6)
 
-        candidate_override = Widgets.TextEntry()
+        candidate_override = Widgets.TextEntrySet()
         candidate_override.add_callback('activated', lambda x: self.override_set(event=x))
         candidate_override.set_length(10)
 
@@ -180,7 +180,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         candidates_hbox.set_margins(15, 0, 15, 0)  # top, right, bottom, left
 
         override_hbox = Widgets.HBox()
-        override_label = Widgets.Label(text="(Optional) Override provisional name for viewing: ")
+        override_label = Widgets.Label(text="(Optional) Override provisional name: ")
         override_hbox.add_widget(override_label)
         override_hbox.add_widget(candidate_override)
 
@@ -239,6 +239,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                         self.next()
                         return
 
+                self.console_box.append_text("Loading {}...\n".format(self.candidate[0].provisional_name))
                 self.load()
                 self.buttons_on()
             except Exception as ex:
@@ -276,12 +277,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         :param qrun_id: QRUNID in a header file
         """
-        self.qrun_id = qrun_id.text
-        self.storage_list = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
-                                                         storage.CATALOG,
-                                                         self.qrun_id), force=True)
-        self.load_json.set_enabled(True)
-        self.console_box.append_text("QRUNID set to {}. \n".format(self.qrun_id))
+        if hasattr(qrun_id, 'text'):
+            self.qrun_id = qrun_id.text
+            self.storage_list = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
+                                                             storage.CATALOG,
+                                                             self.qrun_id), force=True)
+            self.load_json.set_enabled(True)
+            self.console_box.append_text("QRUNID set to {}. \n".format(self.qrun_id))
 
     def lookup(self):
         """
@@ -474,6 +476,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.pool.terminate()
             self.pool = Pool(processes=PROCESSES)
             self.buttons_on()
+            self.set_qrun_id(self.qrun_id)
             self.load_candidates(self.pixel)
             self.next()
 
@@ -537,7 +540,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         # the image cutout is considered the first object on the canvas, this deletes everything over top of it
         self.canvas.delete_objects(self.canvas.get_objects()[1:])
-
         if key not in self.null_observation:
             self._mark_aperture()
 
@@ -629,7 +631,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
     def _align(self):
         """
         Aligns images via panning so their backgrounds stay consistent. Images requiring a pan greater than 1/2 the
-         viewing window will be ignored.
+         loaded image will be ignored.
         """
         x, y = WCS(self.header).all_world2pix(self.center[0], self.center[1], 0)
 
@@ -637,9 +639,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
             logging.debug("Pan out of range: ({}, {}) is greater than half the viewing window.".format(x, y))
             self.console_box.append_text("Pan out of range: ({}, {}) is greater than half the viewing window."
                                          .format(x, y) + '\n')
-            return
-
-        self.set_pan(x, y)
+        else:
+            self.set_pan(x, y)
 
     def _key_press(self, canvas, keyname, opn, viewer):
         """
@@ -683,7 +684,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
     def clear_candidate_images(self):
         """
         Clear all the images associated with a candidate.
-        :return:
         """
         if self.candidate is None:
             return
@@ -745,7 +745,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
             hdu = (isinstance(self.image_list[key], ApplyResult) and self.image_list[key].get()
                    or self.image_list[key])
             if isinstance(hdu, ApplyResult):
-                self.console_box.append_text("Loaded HDU is Apply result instance, not an HDU.\n")
+                self.console_box.append_text("Loaded HDU is Apply result instance, not an HDU.")
+                raise TypeError
             self.image_list[key] = hdu
 
         load_hdu = max_size = None

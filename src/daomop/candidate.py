@@ -175,7 +175,8 @@ class CandidateSet(object):
                 obs.append(ob)
             return obs
         except StopIteration:
-            raise StopIteration
+            self.target = self.catalog.previous()
+            return self.previous()
 
 if __name__ == "__main__":
     print sys.argv
