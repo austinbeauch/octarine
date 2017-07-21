@@ -1345,7 +1345,7 @@ def isfile(uri):
 
 
 def copy(source, destination):
-    """Copy a file to/from VOSpace. With upto 10 retries on errors,
+    """Copy a file to/from VOSpace. With up to 10 retries on errors,
 
     :return: content disposition value from data service
     :rtype: basestring

@@ -548,7 +548,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 # the image cutout is considered the first object on the canvas, this deletes everything over top of it
                 self.canvas.delete_objects(self.canvas.get_objects()[1:])
                 if key not in self.null_observation:
-                    self._mark_aperture()
+                    self.mark_aperture()
 
                 self.header_box.set_text("Header:\n" + self.info)
                 self.console_box.append_text("Loaded: {}\n".format(self.candidate[self.obs_number].comment.frame))
@@ -560,7 +560,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                                              .format(self.candidate[0].provisional_name))
                 self.next()
 
-    def _mark_aperture(self):
+    def mark_aperture(self):
         """
         Draws a red circle on the drawing canvas in the viewing window around the celestial object detected.
         """
@@ -592,15 +592,38 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     fobj.write(ob.to_string() + '\n')
 
             self.logger.info("Queuing job to write file to VOSpace.")
-            self.pool.apply_async(self.downloader.put, (art,))
+            with self.lock:
+                self.pool.apply_async(self.downloader.put, (art,))
+                if not rejected:
+                    self.pool.apply_async(self.accepted_list, (art,))
+
             msg = "Done Queuing {} for VOSpace write {}".format(self.candidate[0].provisional_name + ".ast",
                                                                 art.uri)
             logging.info(msg)
-            self.console_box.append_text(msg+"\n")
+            self.console_box.append_text(msg + "\n")
 
         except IOError as ex:
             self.console_box.append_text("Unable to write to file.\n")
             self.console_box.append_text(str(ex) + '\n')
+            raise ex
+
+    def accepted_list(self, art, ext='.ast'):
+        """
+        Places accepted .ast file in an accepted folder in its QRUNID section on VOSpace
+
+        :param art: Artifact object containing the proper file name
+        :param ext: file extension
+        """
+        # 'vos:cfis/solar_system/dbimages/catalogs/QRUNID/acepted/name.ast
+        print "accept"
+        destination = os.path.join(os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG),
+                                   self.header['QRUNID'], 'accepted', art.observation.dataset_name + ext)
+        try:
+            storage.make_path(destination)
+            storage.copy(art.filename, destination)
+        except Exception as ex:
+            self.console_box.append_text("Failed writing to accepted directory for {}: {}".format(
+                art.observation.dataset_name, str(ex)))
             raise ex
 
     def _rotate(self):
