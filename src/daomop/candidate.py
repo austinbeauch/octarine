@@ -1,7 +1,5 @@
 import sys
 
-from astropy import units
-from astropy.coordinates import SkyCoord
 from mp_ephem import ObsRecord
 from astropy.time import Time
 import logging
