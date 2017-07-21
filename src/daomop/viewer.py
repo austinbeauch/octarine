@@ -105,6 +105,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.next_set = Widgets.Button("Next Set >")
         self.previous_set = Widgets.Button("< Previous Set")
         self.load_json = Widgets.Button("Load")
+        self.clear_button = Widgets.Button("Clear")
 
         self.legend = Widgets.TextArea(wrap=True)
         self.legend.set_text(LEGEND)
@@ -152,6 +153,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.load_json.add_callback('activated', lambda x: self.load_candidates())
         self.next_set.add_callback('activated', lambda x: self.next())
         self.previous_set.add_callback('activated', lambda x: self.previous())
+        self.clear_button.add_callback('activated', lambda x: self.clear_viewer())
 
         reload_button = Widgets.Button("Reload")
         reload_button.add_callback('activated', lambda x: self.reload_candidates())
@@ -163,9 +165,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
         buttons_hbox.add_widget(self.reject)
         buttons_hbox.add_widget(self.next_set)
         buttons_hbox.add_widget(self.load_json)
-        self.load_json.set_enabled(False)
         buttons_hbox.add_widget(reload_button)
-        buttons_hbox.set_spacing(10)
+        buttons_hbox.add_widget(self.clear_button)
+        self.load_json.set_enabled(False)
+        buttons_hbox.set_spacing(3)
 
         # catalog directory text box
         catalog_box = Widgets.HBox()
@@ -593,9 +596,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
             self.logger.info("Queuing job to write file to VOSpace.")
             with self.lock:
-                self.pool.apply_async(self.downloader.put, (art,))
-                if not rejected:
-                    self.pool.apply_async(self.accepted_list, (art,))
+                try:
+                    self.pool.apply_async(self.downloader.put, (art,))
+                    if not rejected:
+                        self.pool.apply_async(self.accepted_list, (art,))
+                except Exception as ex:
+                    self.console_box.append_text("Failed to write file {}: {}".format(
+                        self.candidate[0].provisional_name, str(ex)))
 
             msg = "Done Queuing {} for VOSpace write {}".format(self.candidate[0].provisional_name + ".ast",
                                                                 art.uri)
@@ -615,7 +622,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :param ext: file extension
         """
         # 'vos:cfis/solar_system/dbimages/catalogs/QRUNID/acepted/name.ast
-        print "accept"
         destination = os.path.join(os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG),
                                    self.header['QRUNID'], 'accepted', art.observation.dataset_name + ext)
         try:
@@ -737,9 +743,16 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 if comp_key in self.astro_images:
                     del(self.astro_images[comp_key])
 
+    def clear_viewer(self):
+        """
+        Clear the image in the viewer and any other objects drawn on the canvas.g
+        """
+        self.clear()
+        self.canvas.delete_objects(self.canvas.get_objects())
+
     def buttons_on(self):
         """
-        Activate all GUI buttons
+        Activate most GUI buttons
         """
         self.next_set.set_enabled(True)
         self.previous_set.set_enabled(True)
@@ -748,7 +761,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
     def buttons_off(self):
         """
-        Deactivate all GUI buttons
+        Deactivate most GUI buttons
         """
         self.next_set.set_enabled(False)
         self.previous_set.set_enabled(False)
