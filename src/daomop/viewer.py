@@ -136,9 +136,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         self.set_callback('cursor-changed', self.motion_cb)
 
-        candidate_set = Widgets.TextEntrySet()
-        candidate_set.add_callback('activated', lambda x: self.set_pixel(event=x))
-        candidate_set.set_length(6)
+        pixel_set = Widgets.TextEntrySet()
+        pixel_set.add_callback('activated', lambda x: self.set_pixel(event=x))
+        pixel_set.set_length(6)
 
         candidate_override = Widgets.TextEntrySet()
         candidate_override.add_callback('activated', lambda x: self.override_set(event=x))
@@ -180,7 +180,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         candidates_hbox = Widgets.HBox()
         candidate_label = Widgets.Label(text="(Optional) Enter candidate set: ")
         candidates_hbox.add_widget(candidate_label)
-        candidates_hbox.add_widget(candidate_set)
+        candidates_hbox.add_widget(pixel_set)
         candidates_hbox.set_margins(15, 0, 15, 0)  # top, right, bottom, left
 
         override_hbox = Widgets.HBox()
@@ -362,63 +362,14 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         :param pixel: Catalogue number containing dataset
         """
-        self.load_json.set_enabled(False)
-
         if pixel is None:
             self.pixel = self.lookup()
 
-        if self.pixel == 0:  # recursive base case (when there are no more open candidate sets in the VOSpace directory)
-            self.console_box.append_text("No more candidate sets for this QRUNID.\n")
-            raise StopIteration
-
-        self.console_box.append_text("Accepted candidate entry: {}\n".format(self.pixel))
-
-        try:
-            self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
-
-            if self.length_check:
-                sub_directory = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
-                                                             storage.CATALOG,
-                                                             self.qrun_id,
-                                                             self.candidates.catalog.catalog.dataset_name),
-                                                force=True)
-                if self.override is not None:
-                    filename = self.override+'.ast'
-                    if filename in sub_directory:
-                        self.console_box.append_text("Overriding {}.\n".format(filename))
-                else:
-                    count = 0
-                    # counting the total amount of candidates that are in self.candidates
-                    for _ in self.candidates:
-                        count += 1
-
-                    # re-set self.candidates since the for loop removes all its candidates in a dequeuing fashion
-                    self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
-
-                    # the amount of files in the accompanying subdirectory for the .json candidate file
-                    directory_length = len(sub_directory)
-
-                    if count == directory_length:
-                        self.console_box.append_text("Candidate set {} fully examined.\n".format(self.pixel))
-                        self.load_candidates()
-                        return
-
-                    elif count > directory_length:
-                        self.console_box.append_text("Candidate set {} not fully examined.\n".format(self.pixel))
-
-                    else:
-                        logging.error("Value error: count {} or directory_length {} is out of range."
-                                      .format(count, directory_length))
-                        raise ValueError
-
-        except Exception as ex:
-            self.console_box.append_text("Failed to load candidates: {} \n".format(str(ex)))
-            if isinstance(ex, StopIteration):
-                self.console_box.append_text('StopIteration error. Candidate set might be empty.\n')
-                self.load_candidates()  # recursive call to find next candidate which needs validation
-                return  # prevents further execution of this method, handle better by shortening this method?
+        while True:
+            if self.set_not_examined():
+                break
             else:
-                raise ex
+                self.pixel = self.lookup()
 
         self.logger.warning("Launching image prefetching. Please be patient.\n")
 
@@ -483,6 +434,65 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
         self.candidate = None  # reset on candidate to clear it of any leftover from previous sets
         self.load()
+
+    def set_not_examined(self):
+        """
+        Checks if the current json file has been fully examined or not
+
+        :return False if the directory is fully examined and there's no override, true if it has not been examined.
+        """
+        self.load_json.set_enabled(False)
+
+        if self.pixel == 0:  # recursive base case (when there are no more open candidate sets in the VOSpace directory)
+            self.console_box.append_text("No more candidate sets for this QRUNID.\n")
+            raise StopIteration
+
+        self.console_box.append_text("Accepted candidate entry: {}\n".format(self.pixel))
+        try:
+            self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
+            if self.length_check:
+                sub_directory = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
+                                                             storage.CATALOG,
+                                                             self.qrun_id,
+                                                             self.candidates.catalog.catalog.dataset_name), force=True)
+                if self.override is not None:
+                    filename = self.override+'.ast'
+                    if filename in sub_directory:
+                        self.console_box.append_text("Overriding {}.\n".format(filename))
+                        return True
+                else:
+                    count = 0
+                    # counting the total amount of candidates that are in self.candidates
+                    for _ in self.candidates:
+                        count += 1
+
+                    # re-set self.candidates since the for loop removes all its candidates in a dequeuing fashion
+                    self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
+
+                    # the amount of files in the accompanying subdirectory for the .json candidate file
+                    directory_length = len(sub_directory)
+                    if count == directory_length:
+                        self.console_box.append_text("Candidate set {} fully examined.\n".format(self.pixel))
+                        return False
+
+                    elif count > directory_length:
+                        self.console_box.append_text("Candidate set {} not fully examined.\n".format(self.pixel))
+                        return True
+
+                    else:
+                        logging.error("Value error: count {} or directory_length {} is out of range."
+                                      .format(count, directory_length))
+                        raise ValueError
+
+            return True  # no length check, therefor no directory has been created and this set isn't examined
+
+        except Exception as ex:
+            self.console_box.append_text("Failed to load candidates: {} \n".format(str(ex)))
+            if isinstance(ex, StopIteration):
+                self.console_box.append_text('StopIteration error. Candidate set might be empty.\n')
+                return False  # continue with iteration
+            else:
+                raise ex
 
     def reload_candidates(self):
         """
