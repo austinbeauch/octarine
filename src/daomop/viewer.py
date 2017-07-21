@@ -364,9 +364,12 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         if pixel is None:
             self.pixel = self.lookup()
-
+        self.load_json.set_enabled(False)
         while True:
-            if self.set_not_examined():
+            if self.pixel == 0:  # base case (when there are no more open candidate sets in the VOSpace directory)
+                self.console_box.append_text("No more candidate sets for this QRUNID.\n")
+                raise StopIteration
+            elif self.set_not_examined():
                 break
             else:
                 self.pixel = self.lookup()
@@ -441,12 +444,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         :return False if the directory is fully examined and there's no override, true if it has not been examined.
         """
-        self.load_json.set_enabled(False)
-
-        if self.pixel == 0:  # recursive base case (when there are no more open candidate sets in the VOSpace directory)
-            self.console_box.append_text("No more candidate sets for this QRUNID.\n")
-            raise StopIteration
-
         self.console_box.append_text("Accepted candidate entry: {}\n".format(self.pixel))
         try:
             self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
