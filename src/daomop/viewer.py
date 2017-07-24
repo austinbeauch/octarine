@@ -535,6 +535,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if self.candidate is None:
             self.next()
             return
+
         key = self.key
         while True:
             # noinspection PyBroadException
@@ -628,7 +629,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :param art: Artifact object containing the proper file name
         :param ext: file extension
         """
-        # 'vos:cfis/solar_system/dbimages/catalogs/QRUNID/acepted/name.ast
+        # 'vos:cfis/solar_system/dbimages/catalogs/<QRUNID>/acepted/<dataset_name>.ast
         destination = os.path.join(os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG),
                                    self.header['QRUNID'], 'accepted', art.observation.dataset_name + ext)
         try:
@@ -686,7 +687,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
         x, y = WCS(self.header).all_world2pix(self.center[0], self.center[1], 0)
 
         if not(0 < x < self.get_data_size()[0] and 0 < y < self.get_data_size()[1]):
-            logging.debug("Pan out of range: ({}, {}) is greater than half the viewing window.".format(x, y))
             self.console_box.append_text("Pan out of range: ({}, {}) is greater than half the viewing window."
                                          .format(x, y) + '\n')
         else:
@@ -826,51 +826,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
     @property
     def info(self):
         return "\n".join([x + " = " + str(self.header.get(x, "UNKNOWN")) for x in DISPLAY_KEYWORDS])
-
-
-class ImageViewer(object):
-
-    def __init__(self):
-        """
-        Initialization of a local, web-client based server for displaying images. The viewer should automatically pop
-         up in a new tab.
-        """
-        # standard setup commands; creating viewing window
-        self.web_server = ipg.make_server(host="localhost",
-                                          port=9914,
-                                          use_opencv=False,
-                                          viewer_class=ValidateGui)
-        self.web_server.start(no_ioloop=True)
-        self.viewer = self.web_server.get_viewer("ID")
-        self.viewer.enable_autocuts('on')
-        self.viewer.set_autocut_params('zscale')
-        self.viewer.open()
-
-
-class WebServerFactory(object):
-    """
-    The Server that the validate app will be run via.
-    """
-
-    def __enter__(self):
-        self.web_server = ipg.make_server(host=self.host,
-                                          port=self.port,
-                                          use_opencv=False,
-                                          viewer_class=self.viewer_class)
-        self.web_server.start(no_ioloop=True)
-        return self.web_server
-
-    def __init__(self, viewer_class=ValidateGui, port=9914, host='localhost'):
-        # standard setup commands; creating viewing window
-        self.viewer_class = viewer_class
-        self.port = port
-        self.host = host
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.web_server.stop()
-
-    def __del__(self):
-        self.web_server.stop()
 
 
 def main(params):
