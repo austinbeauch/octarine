@@ -202,8 +202,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         buttons_vbox.add_widget(buttons_hbox)
         buttons_vbox.add_widget(catalog_box)
         buttons_vbox.add_widget(candidates_hbox)
-        buttons_vbox.add_widget(astfile_hbox)
         buttons_vbox.add_widget(override_hbox)
+        buttons_vbox.add_widget(astfile_hbox)
 
         viewer_vbox.add_widget(buttons_vbox)  # add buttons below the viewer
 
@@ -367,10 +367,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
             except:
                 logging.warning("Failed to parse line >{}<".format(line))
         self.candidates = [self.candidate]
-        print self.candidate
         self.next_set.set_enabled(False)
         self.previous_set.set_enabled(False)
-        self._download_obsrecords()
+        self._download_obs_records(self.candidate)
         self.load(0)
 
     def override_set(self, event):
@@ -404,67 +403,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         with self.lock:
             for obs_records in self.candidates:
-                previous_record = None
-                previous_offset = 2*storage.CUTOUT_RADIUS
-                offset = previous_offset
-                for obs_record in obs_records:
-                    assert isinstance(obs_record, ObsRecord)
-                    key = self.downloader.image_key(obs_record)
-                    if key not in self.image_list:
-                        self.image_list[key] = self.pool.apply_async(self.downloader.get, (obs_record,))
-
-                    # Check if we should load a comparison for the previous image.
-                    if previous_record is not None:
-                        offset = obs_record.coordinate.separation(previous_record.coordinate)
-                        if offset > storage.CUTOUT_RADIUS and previous_offset > storage.CUTOUT_RADIUS:
-                            # Insert a blank image in the list
-                            previous_key = self.downloader.image_key(previous_record)
-                            comparison = storage.get_comparison_image(previous_record.coordinate,
-                                                                      previous_record.date.mjd)
-                            frame = "{}{}".format(comparison[0]['observationID'], 'p00')
-                            comparison_obs_record = ObsRecord(null_observation=True,
-                                                              provisional_name=previous_record.provisional_name,
-                                                              date=Time(comparison[0]['mjdate'], format='mjd',
-                                                                        precision=5).mpc,
-                                                              ra=previous_record.coordinate.ra.degree,
-                                                              dec=previous_record.coordinate.dec.degree,
-                                                              frame=frame,
-                                                              comment=previous_key)
-                            key = self.downloader.image_key(comparison_obs_record)
-                            self.null_observation[key] = comparison_obs_record
-                            self.comparison_images[previous_key] = key
-                            if key not in self.image_list:
-                                self.image_list[key] = self.pool.apply_async(self.downloader.get,
-                                                                             (comparison_obs_record,))
-
-                    previous_record = obs_record
-                    previous_offset = offset
-                # Check if the offset between the last record and the one just before it was large.
-                if previous_offset > storage.CUTOUT_RADIUS and previous_record is not None:
-                    previous_key = self.downloader.image_key(previous_record)
-                    comparison = storage.get_comparison_image(previous_record.coordinate,
-                                                              previous_record.date.mjd)
-                    frame = "{}{}".format(comparison[0]['observationID'], 'p00')
-                    comparison_obs_record = ObsRecord(null_observation=True,
-                                                      provisional_name=previous_record.provisional_name,
-                                                      date=Time(comparison[0]['mjdate'], format='mjd',
-                                                                precision=5).mpc,
-                                                      ra=previous_record.coordinate.ra.degree,
-                                                      dec=previous_record.coordinate.dec.degree,
-                                                      frame=frame,
-                                                      comment=previous_key)
-                    key = self.downloader.image_key(comparison_obs_record)
-                    self.null_observation[key] = comparison_obs_record
-                    self.comparison_images[previous_key] = key
-                    if key not in self.image_list:
-                        self.image_list[key] = self.pool.apply_async(self.downloader.get,
-                                                                     (comparison_obs_record,))
+                self._download_obs_records(obs_records)
 
         self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
         self.candidate = None  # reset on candidate to clear it of any leftover from previous sets
         self.load()
 
-    def _download_obsrecords(self):
+    def _download_obs_records(self, record):
         """
         Download the observations associated with the current self.candidate set of obsRecords.
         :return:
@@ -472,7 +417,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         previous_record = None
         previous_offset = 2 * storage.CUTOUT_RADIUS
         offset = previous_offset
-        for obs_record in self.candidate:
+        for obs_record in record:
             assert isinstance(obs_record, ObsRecord)
             key = self.downloader.image_key(obs_record)
             if key not in self.image_list:
