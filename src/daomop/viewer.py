@@ -81,6 +81,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
         # creating key-press event handling
         self.canvas.add_callback('key-press', self._key_press, 'key', self)
 
+        # remove callbacks for clicking on the canvas (which is over the viewer)
+        self.canvas.delete_callback('cursor-down')
+        self.canvas.delete_callback('cursor-up')
+
         self.obs_number = 0
         self.candidate = None
         self.candidates = None
@@ -88,9 +92,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self._center = None
         self.pixel = None
         self.storage_list = None
+        self.override = None
+        self.qrun_id = None
         self.length_check = False
-        self.qrun_id = ''
-        # self.pixels = []  # used in self.pixel_list()
 
         # GUI elements
         self.pixel_base = 1.0
@@ -101,6 +105,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.next_set = Widgets.Button("Next Set >")
         self.previous_set = Widgets.Button("< Previous Set")
         self.load_json = Widgets.Button("Load")
+        self.clear_button = Widgets.Button("Clear")
 
         self.legend = Widgets.TextArea(wrap=True)
         self.legend.set_text(LEGEND)
@@ -131,9 +136,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         self.set_callback('cursor-changed', self.motion_cb)
 
-        candidate_set = Widgets.TextEntry()
-        candidate_set.add_callback('activated', lambda x: self.set_pixel(event=x))
-        candidate_set.set_length(6)
+        pixel_set = Widgets.TextEntrySet()
+        pixel_set.add_callback('activated', lambda x: self.set_pixel(event=x))
+        pixel_set.set_length(6)
+
+        candidate_override = Widgets.TextEntrySet()
+        candidate_override.add_callback('activated', lambda x: self.override_set(event=x))
+        candidate_override.set_length(10)
 
         astfile = Widgets.TextArea(editable=True)
         astfile.add_callback('activated', lambda x: self.load_astfile(event=x))
@@ -147,9 +156,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.load_json.add_callback('activated', lambda x: self.load_candidates())
         self.next_set.add_callback('activated', lambda x: self.next())
         self.previous_set.add_callback('activated', lambda x: self.previous())
-
-        # quit_button = Widgets.Button("Quit")
-        # quit_button.add_callback('activated', lambda x: self.exit())
+        self.clear_button.add_callback('activated', lambda x: self.clear_viewer())
 
         reload_button = Widgets.Button("Reload")
         reload_button.add_callback('activated', lambda x: self.reload_candidates())
@@ -161,21 +168,28 @@ class ValidateGui(ipg.EnhancedCanvasView):
         buttons_hbox.add_widget(self.reject)
         buttons_hbox.add_widget(self.next_set)
         buttons_hbox.add_widget(self.load_json)
-        self.load_json.set_enabled(False)
         buttons_hbox.add_widget(reload_button)
-        buttons_hbox.set_spacing(10)
+        buttons_hbox.add_widget(self.clear_button)
+        self.load_json.set_enabled(False)
+        buttons_hbox.set_spacing(3)
 
         # catalog directory text box
         catalog_box = Widgets.HBox()
         catalog_label = Widgets.Label(text="Set QRUNID:", style='color:red')
         catalog_box.add_widget(catalog_label)
         catalog_box.add_widget(catalog)
-        catalog_box.set_margins(15, 0, 15, 0)  # top, right, bottom, left
+        catalog_box.set_margins(15, 0, 10, 0)  # top, right, bottom, left
 
         candidates_hbox = Widgets.HBox()
-        candidate_label = Widgets.Label(text="(Optional) Enter candidate set:")
+        candidate_label = Widgets.Label(text="(Optional) Enter candidate set: ")
         candidates_hbox.add_widget(candidate_label)
-        candidates_hbox.add_widget(candidate_set)
+        candidates_hbox.add_widget(pixel_set)
+        candidates_hbox.set_margins(15, 0, 15, 0)  # top, right, bottom, left
+
+        override_hbox = Widgets.HBox()
+        override_label = Widgets.Label(text="(Optional) Override provisional name: ")
+        override_hbox.add_widget(override_label)
+        override_hbox.add_widget(candidate_override)
 
         astfile_hbox = Widgets.HBox()
         astfile_hbox_label = Widgets.Label(text="Paste AST file here:")
@@ -188,14 +202,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
         buttons_vbox.add_widget(catalog_box)
         buttons_vbox.add_widget(candidates_hbox)
         buttons_vbox.add_widget(astfile_hbox)
+        buttons_vbox.add_widget(override_hbox)
+
 
         viewer_vbox.add_widget(buttons_vbox)  # add buttons below the viewer
-
-        # # quit/reload buttons
-        # quit_box = Widgets.HBox()
-        # #quit_box.add_widget(quit_button)
-        # quit_box.add_widget(reload_button)
-        # quit_box.set_spacing(10)
 
         viewer_header_hbox = Widgets.HBox()  # box containing the viewer/buttons and rightmost text area
         viewer_header_hbox.add_widget(viewer_vbox)
@@ -204,13 +214,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
         hbox.add_widget(self.header_box)
         hbox.add_widget(self.legend)
         viewer_header_hbox.add_widget(hbox)
-        # viewer_header_hbox.add_widget(self.legend)
 
         full_vbox = Widgets.VBox()  # vbox container for all elements
-        # full_vbox.add_widget(quit_box)
         full_vbox.add_widget(viewer_header_hbox)
 
-        hbox.add_widget(self.console_box)
+        full_vbox.add_widget(self.console_box)
         self.console_box.set_text('Logging output:\n')
         self.header_box.set_text("Header:")
         container.set_widget(full_vbox)
@@ -222,32 +230,22 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if self.candidates is not None:
             # noinspection PyBroadException
             try:
-                self.next_set.set_enabled(False)
-                self.previous_set.set_enabled(False)
-                self.accept.set_enabled(False)
-                self.reject.set_enabled(False)
+                self.buttons_off()
                 self.obs_number = 0
                 self.next_image = None
                 self.clear_candidate_images()
                 self.candidate = self.candidates.next()
 
-                # Checks if candidate has already been examined with a file written on VOSpace.
-                # length_check is necessary because it means the sub directory exists, if it doesn't an error will be
-                # thrown when looking in the directory list.
-                if self.length_check and self.candidate[0].provisional_name + '.ast' in storage.listdir(
-                        os.path.join(os.path.dirname(storage.DBIMAGES),
-                                     storage.CATALOG, self.qrun_id,
-                                     self.candidates.catalog.catalog.dataset_name), force=True):
-                    self.console_box.append_text("Candidate {} has been investigated.\n"
-                                                 .format(self.candidate[0].provisional_name))
-                    self.next()
-                    return
+                # finding next candidate to load depending on which .ast files are written
+                while True:
+                    if not self.ast_exists():
+                        break
+                    self.candidate = self.candidates.next()
 
+                self.console_box.append_text("Loading {}...\n".format(self.candidate[0].provisional_name))
                 self.load()
-                self.next_set.set_enabled(True)
-                self.previous_set.set_enabled(True)
-                self.accept.set_enabled(True)
-                self.reject.set_enabled(True)
+                self.buttons_on()
+
             except Exception as ex:
                 self.console_box.append_text('Loading next candidate set failed.\n')
                 if isinstance(ex, StopIteration):
@@ -256,23 +254,40 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     self.previous_set.set_enabled(True)
                     self.load_json.set_enabled(True)
 
+    def ast_exists(self):
+        """
+        Checks if candidate has already been examined with a file written on VOSpace.
+        length_check is necessary because it means the sub directory exists, if it doesn't an error will be
+         thrown when looking in the directory list.
+
+        :return True is the .ast files exists and there is no viewing override, False otherwise
+        """
+        if self.length_check and self.candidate[0].provisional_name + '.ast' in storage.listdir(
+                os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG, self.qrun_id,
+                             self.candidates.catalog.catalog.dataset_name), force=True):
+
+            if self.override == self.candidate[0].provisional_name:
+                self.console_box.append_text("Candidate {} being overridden for viewing.\n"
+                                             .format(self.candidate[0].provisional_name))
+
+            else:
+                self.console_box.append_text("Candidate {} has been investigated.\n"
+                                             .format(self.candidate[0].provisional_name))
+                return True
+
+        return False
+
     def previous(self):
         """
         Load the previous set of images into the viewer
         """
         if self.candidates is not None:
-            self.next_set.set_enabled(False)
-            self.previous_set.set_enabled(False)
-            self.accept.set_enabled(False)
-            self.reject.set_enabled(False)
+            self.buttons_off()
             self.obs_number = 0
             self.candidate = self.candidates.previous()
             if self.candidate is not None:
                 self.load()
-            self.previous_set.set_enabled(True)
-            self.next_set.set_enabled(True)
-            self.accept.set_enabled(True)
-            self.reject.set_enabled(True)
+            self.buttons_on()
 
     def accept_reject(self, rejected=False):
         """
@@ -285,37 +300,17 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.write_record(rejected=rejected)
             self.next()
 
-    # def exit(self):
-    #     """
-    #     Shuts down the application
-    #     """
-    #     import sys
-    #     self.console_box.append_text("Shutting down application.\n")
-    #     self.logger.info("Attempting to shut down the application...")
-    #     if self.top is not None:
-    #         self.top.close()
-    #     sys.exit()
-
     def set_qrun_id(self, qrun_id):
         """
         :param qrun_id: QRUNID in a header file
         """
-        self.qrun_id = qrun_id.text
-        self.storage_list = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
-                                                         storage.CATALOG,
-                                                         self.qrun_id), force=True)
-        self.load_json.set_enabled(True)
-        self.console_box.append_text("QRUNID set to {}. \n".format(self.qrun_id))
-
-    # def pixel_list(self):
-    #     """
-    #     Generates a list of pixel values from HPX catalogues in the current directory.
-    #     Catalogues take for form of HPX_xxxxx_RA_yyy.y_DEC_+zz.z_mjdalltracks.json where xxxxx is the pixel.
-    #     """
-    #     for item in self.storage_list:
-    #         x = re.match('(?P<hpx>HPX_)(?P<pixel>\d{5})(?P<leftover>_.*)', item)
-    #         if x is not None and x.group('pixel') not in self.pixels:
-    #             self.pixels.append(x.group('pixel'))
+        if hasattr(qrun_id, 'text'):
+            self.qrun_id = qrun_id.text
+            self.storage_list = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
+                                                             storage.CATALOG,
+                                                             self.qrun_id), force=True)
+            self.load_json.set_enabled(True)
+            self.console_box.append_text("QRUNID set to {}. \n".format(self.qrun_id))
 
     def lookup(self):
         """
@@ -359,7 +354,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if hasattr(event, 'text'):
             self.pixel = int(event.text)
             self.console_box.append_text("Set pixel as {}\n".format(self.pixel))
-            if self.qrun_id != '':
+            if self.qrun_id is not None:
                 self.load_json.set_enabled(True)
 
     def load_astfile(self, event):
@@ -376,61 +371,32 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self._download_obsrecords()
         self.load(0)
 
+    def override_set(self, event):
+        """
+        Look at the cutout even if it has already been investigated. Primarily used for double checking
+         accepted candidates.
+        """
+        if hasattr(event, 'text'):
+            self.override = str(event.text)
+            self.console_box.append_text("Will override {}.\n".format(self.override))
+
     def load_candidates(self, pixel=None):
         """
         Initial candidates loaded into the viewer. Starts up a thread pool to download images simultaneously.
 
         :param pixel: Catalogue number containing dataset
         """
-        self.load_json.set_enabled(False)
-
         if pixel is None:
             self.pixel = self.lookup()
-
-        if self.pixel == 0:  # recursive base case (when there are no more open candidate sets in the VOSpace directory)
-            self.console_box.append_text("No more candidate sets for this QRUNID.\n")
-            raise StopIteration
-
-        self.console_box.append_text("Accepted candidate entry: {}\n".format(self.pixel))
-
-        try:
-            self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
-
-            if self.length_check:
-                count = 0
-                # counting the total amount of candidates that are in self.candidates
-                for _ in self.candidates:
-                    count += 1
-
-                # re-set self.candidates since the for loop removes all its candidates in a dequeuing fashion
-                self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
-                # the amount of files in the accompanying subdirectory for the .json candidate file
-                directory_length = len(storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
-                                                                    storage.CATALOG,
-                                                                    self.qrun_id,
-                                                                    self.candidates.catalog.catalog.dataset_name),
-                                                       force=True))
-
-                if count == directory_length:
-                    self.console_box.append_text("Candidate set {} fully examined.\n".format(self.pixel))
-                    self.load_candidates()
-                    return
-                elif count > directory_length:
-                    self.console_box.append_text("Candidate set {} not fully examined.\n".format(self.pixel))
-
-                else:
-                    logging.error("Value error: count {} or directory_length {} is out of range."
-                                  .format(count, directory_length))
-                    raise ValueError
-
-        except Exception as ex:
-            self.console_box.append_text("Failed to load candidates: {} \n".format(str(ex)))
-            if isinstance(ex, StopIteration):
-                self.console_box.append_text('StopIteration error. Candidate set might be empty.\n')
-                self.load_candidates()  # recursive call to find next candidate which needs validation
-                return  # prevents further execution of this method
+        self.load_json.set_enabled(False)
+        while True:
+            if self.pixel == 0:  # base case (when there are no more open candidate sets in the VOSpace directory)
+                self.console_box.append_text("No more candidate sets for this QRUNID.\n")
+                raise StopIteration
+            elif self.set_not_examined():
+                break
             else:
-                raise ex
+                self.pixel = self.lookup()
 
         self.logger.warning("Launching image prefetching. Please be patient.\n")
 
@@ -496,6 +462,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.candidate = None  # reset on candidate to clear it of any leftover from previous sets
         self.load()
 
+
     def _download_obsrecords(self):
         """
         Download the observations associated with the current self.candidate set of obsRecords.
@@ -556,6 +523,58 @@ class ValidateGui(ipg.EnhancedCanvasView):
             if key not in self.image_list:
                 self.image_list[key] = self.pool.apply_async(self.downloader.get,
                                                              (comparison_obs_record,))
+    def set_not_examined(self):
+        """
+        Checks if the current json file has been fully examined or not
+
+        :return False if the directory is fully examined and there's no override, true if it has not been examined.
+        """
+        self.console_box.append_text("Accepted candidate entry: {}\n".format(self.pixel))
+        try:
+            self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
+            if self.length_check:
+                sub_directory = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
+                                                             storage.CATALOG,
+                                                             self.qrun_id,
+                                                             self.candidates.catalog.catalog.dataset_name), force=True)
+                if self.override is not None:
+                    filename = self.override+'.ast'
+                    if filename in sub_directory:
+                        self.console_box.append_text("Overriding {}.\n".format(filename))
+                        return True
+                else:
+                    count = 0
+                    # counting the total amount of candidates that are in self.candidates
+                    for _ in self.candidates:
+                        count += 1
+
+                    # re-set self.candidates since the for loop removes all its candidates in a dequeuing fashion
+                    self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
+
+                    # the amount of files in the accompanying subdirectory for the .json candidate file
+                    directory_length = len(sub_directory)
+                    if count == directory_length:
+                        self.console_box.append_text("Candidate set {} fully examined.\n".format(self.pixel))
+                        return False
+
+                    elif count > directory_length:
+                        self.console_box.append_text("Candidate set {} not fully examined.\n".format(self.pixel))
+                        return True
+
+                    else:
+                        logging.error("Value error: count {} or directory_length {} is out of range."
+                                      .format(count, directory_length))
+                        raise ValueError
+
+            return True  # no length check, therefor no directory has been created and this set isn't examined
+
+        except Exception as ex:
+            self.console_box.append_text("Failed to load candidates: {} \n".format(str(ex)))
+            if isinstance(ex, StopIteration):
+                self.console_box.append_text('StopIteration error. Candidate set might be empty.\n')
+                return False  # continue with iteration
+            else:
+                raise ex
 
     def reload_candidates(self):
         """
@@ -566,6 +585,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.console_box.append_text('Reloading all candidates...\n')
             self.pool.terminate()
             self.pool = Pool(processes=PROCESSES)
+            self.buttons_on()
+            self.set_qrun_id(self.qrun_id)
             self.load_candidates(self.pixel)
             self.next()
 
@@ -598,42 +619,51 @@ class ValidateGui(ipg.EnhancedCanvasView):
         # loads first candidate
         if self.candidate is None:
             self.next()
+            return
+
         key = self.key
         while True:
             # noinspection PyBroadException
             try:
                 if key not in self.astro_images:
+                    # TODO: MEF
                     image = AstroImage.AstroImage(logger=self.logger)
-
                     image.load_hdu(self.loaded_hdu)
-
                     self.astro_images[key] = image
 
                 self.set_image(self.astro_images[key])
+
+                if self.zoom is not None:
+                    self.zoom_to(self.zoom)
+
+                self._rotate()
+
+                if self.center is not None:
+                    self._align()
+
+                # the image cutout is considered the first object on the canvas, this deletes everything over top of it
+                self.canvas.delete_objects(self.canvas.get_objects()[1:])
+                if key not in self.null_observation:
+                    self.mark_aperture()
+
+                self.header_box.set_text("Header:\n" + self.info)
+                self.console_box.append_text("Loaded: {}\n".format(self.candidate[self.obs_number].comment.frame))
                 break
 
             except Exception as ex:
                 self.console_box.append_text(str(ex) + '\n')
                 self.console_box.append_text("Skipping candidate {} due to load failure\n"
                                              .format(self.candidate[0].provisional_name))
-                self.logger.debug(str(ex))
-                self.logger.debug("Skipping candidate {} due to load failure\n".format(self.obs_number))
                 self.next()
 
-        if self.zoom is not None:
-            self.zoom_to(self.zoom)
-
-        self._rotate()
-
-        if self.center is not None:
-            self._align()
-
-        # the image cutout is considered the first object on the canvas, this deletes everything over top of it
-        self.canvas.delete_objects(self.canvas.get_objects()[1:])
-        if key not in self.null_observation:
-            self._mark_aperture()
-        self.header_box.set_text("Header:\n" + self.info)
-        self.console_box.append_text("Loaded: {}\n".format(self.candidate[self.obs_number].comment.frame))
+    def mark_aperture(self):
+        """
+        Draws a red circle on the drawing canvas in the viewing window around the celestial object detected.
+        """
+        ra = self.candidate[self.obs_number].coordinate.ra
+        dec = self.candidate[self.obs_number].coordinate.dec
+        x, y = WCS(self.header).all_world2pix(ra, dec, 0)
+        self.canvas.add(self.circle(x, y, radius=10, color='red'))
 
     def write_record(self, rejected=False):
         """
@@ -658,25 +688,42 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     fobj.write(ob.to_string() + '\n')
 
             self.logger.info("Queuing job to write file to VOSpace.")
-            self.pool.apply_async(self.downloader.put, (art,))
+            with self.lock:
+                try:
+                    self.pool.apply_async(self.downloader.put, (art,))
+                    if not rejected:
+                        self.pool.apply_async(self.accepted_list, (art,))
+                except Exception as ex:
+                    self.console_box.append_text("Failed to write file {}: {}".format(
+                        self.candidate[0].provisional_name, str(ex)))
+
             msg = "Done Queuing {} for VOSpace write {}".format(self.candidate[0].provisional_name + ".ast",
                                                                 art.uri)
             logging.info(msg)
-            self.console_box.append_text(msg+"\n")
+            self.console_box.append_text(msg + "\n")
 
         except IOError as ex:
-            self.console_box.append_text("Unable to write to file.")
+            self.console_box.append_text("Unable to write to file.\n")
             self.console_box.append_text(str(ex) + '\n')
             raise ex
 
-    def _mark_aperture(self):
+    def accepted_list(self, art, ext='.ast'):
         """
-        Draws a red circle on the drawing canvas in the viewing window around the celestial object detected.
+        Places accepted .ast file in an accepted folder in its QRUNID section on VOSpace
+
+        :param art: Artifact object containing the proper file name
+        :param ext: file extension
         """
-        ra = self.candidate[self.obs_number].coordinate.ra
-        dec = self.candidate[self.obs_number].coordinate.dec
-        x, y = WCS(self.header).all_world2pix(ra, dec, 0)
-        self.canvas.add(self.circle(x, y, radius=10, color='red'))
+        # 'vos:cfis/solar_system/dbimages/catalogs/<QRUNID>/acepted/<dataset_name>.ast
+        destination = os.path.join(os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG),
+                                   self.header['QRUNID'], 'accepted', art.observation.dataset_name + ext)
+        try:
+            storage.make_path(destination)
+            storage.copy(art.filename, destination)
+        except Exception as ex:
+            self.console_box.append_text("Failed writing to accepted directory for {}: {}".format(
+                art.observation.dataset_name, str(ex)))
+            raise ex
 
     def _rotate(self):
         """
@@ -720,17 +767,15 @@ class ValidateGui(ipg.EnhancedCanvasView):
     def _align(self):
         """
         Aligns images via panning so their backgrounds stay consistent. Images requiring a pan greater than 1/2 the
-         viewing window will be ignored.
+         loaded image will be ignored.
         """
         x, y = WCS(self.header).all_world2pix(self.center[0], self.center[1], 0)
 
         if not(0 < x < self.get_data_size()[0] and 0 < y < self.get_data_size()[1]):
-            logging.debug("Pan out of range: ({}, {}) is greater than half the viewing window.".format(x, y))
             self.console_box.append_text("Pan out of range: ({}, {}) is greater than half the viewing window."
                                          .format(x, y) + '\n')
-            return
-
-        self.set_pan(x, y)
+        else:
+            self.set_pan(x, y)
 
     def _key_press(self, canvas, keyname, opn, viewer):
         """
@@ -774,18 +819,46 @@ class ValidateGui(ipg.EnhancedCanvasView):
     def clear_candidate_images(self):
         """
         Clear all the images associated with a candidate.
-        :return:
         """
         if self.candidate is None:
             return
         for obs_record in self.candidate:
             key = self.downloader.image_key(obs_record)
-            del(self.image_list[key])
-            del(self.astro_images[key])
+            if key in self.image_list:
+                del(self.image_list[key])
+            if key in self.astro_images:
+                del(self.astro_images[key])
             if key in self.comparison_images:
                 comp_key = self.comparison_images[key]
-                del(self.image_list[comp_key])
-                del(self.astro_images[comp_key])
+                if comp_key in self.comparison_images:
+                    del(self.image_list[comp_key])
+                if comp_key in self.astro_images:
+                    del(self.astro_images[comp_key])
+
+    def clear_viewer(self):
+        """
+        Clear the image in the viewer and any other objects drawn on the canvas.g
+        """
+        self.clear()
+        self.canvas.delete_objects(self.canvas.get_objects())
+
+    def buttons_on(self):
+        """
+        Activate most GUI buttons
+        """
+        self.next_set.set_enabled(True)
+        self.previous_set.set_enabled(True)
+        self.accept.set_enabled(True)
+        self.reject.set_enabled(True)
+
+    def buttons_off(self):
+        """
+        Deactivate most GUI buttons
+        """
+        self.next_set.set_enabled(False)
+        self.previous_set.set_enabled(False)
+        self.accept.set_enabled(False)
+        self.reject.set_enabled(False)
 
     @property
     def center(self):
@@ -808,10 +881,14 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         Return current HDU
         """
+        # TODO: MEF
         key = self.key
         with self.lock:
             hdu = (isinstance(self.image_list[key], ApplyResult) and self.image_list[key].get()
                    or self.image_list[key])
+            if isinstance(hdu, ApplyResult):
+                self.console_box.append_text("Loaded HDU is Apply result instance, not an HDU.")
+                raise TypeError
             self.image_list[key] = hdu
 
         load_hdu = max_size = None
@@ -834,51 +911,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
     @property
     def info(self):
         return "\n".join([x + " = " + str(self.header.get(x, "UNKNOWN")) for x in DISPLAY_KEYWORDS])
-
-
-class ImageViewer(object):
-
-    def __init__(self):
-        """
-        Initialization of a local, web-client based server for displaying images. The viewer should automatically pop
-         up in a new tab.
-        """
-        # standard setup commands; creating viewing window
-        self.web_server = ipg.make_server(host="localhost",
-                                          port=9914,
-                                          use_opencv=False,
-                                          viewer_class=ValidateGui)
-        self.web_server.start(no_ioloop=True)
-        self.viewer = self.web_server.get_viewer("ID")
-        self.viewer.enable_autocuts('on')
-        self.viewer.set_autocut_params('zscale')
-        self.viewer.open()
-
-
-class WebServerFactory(object):
-    """
-    The Server that the validate app will be run via.
-    """
-
-    def __enter__(self):
-        self.web_server = ipg.make_server(host=self.host,
-                                          port=self.port,
-                                          use_opencv=False,
-                                          viewer_class=self.viewer_class)
-        self.web_server.start(no_ioloop=True)
-        return self.web_server
-
-    def __init__(self, viewer_class=ValidateGui, port=9914, host='localhost'):
-        # standard setup commands; creating viewing window
-        self.viewer_class = viewer_class
-        self.port = port
-        self.host = host
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.web_server.stop()
-
-    def __del__(self):
-        self.web_server.stop()
 
 
 def main(params):

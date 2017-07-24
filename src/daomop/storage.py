@@ -509,7 +509,7 @@ class FitsImage(FitsArtifact):
         self._footprint = None
         self._polygon = None
         self._filename = None
-    
+
     @property
     def ccd(self):
         return self._ccd
@@ -616,8 +616,8 @@ class FitsImage(FitsArtifact):
     def flat_field_name(self):
         """
         Looks up the flat_field_name using the header keywords 'FLAT', defaults to 'weight.fits'
-        
-        :return: 
+
+        :return:
         """
 
         if self._flat_field_name is not None:
@@ -641,20 +641,20 @@ class FitsImage(FitsArtifact):
 
     def cutout(self, cutout, return_file=False, trim_to_datasec=False):
         """
-        Given a string such as '[CCD]', '[CCD][x1:x2,y1:y2]', or '(RA,DEC,RADIUS)', 
+        Given a string such as '[CCD]', '[CCD][x1:x2,y1:y2]', or '(RA,DEC,RADIUS)',
          retrieve that portion of the image from VOSpace.
-        
+
         For example:
-        
+
         '[23]' will retrieve the entire CCD #23 from VOSpace.
-        
+
         '[23][100:300,100:400]' will retrieve the specified x/y pixel section from CCD 23.
-         
-        '(75.7044083333, 23.9168472222, 0.0166666666667)' will retrieve part of the exposure specified by the WCS with  
+
+        '(75.7044083333, 23.9168472222, 0.0166666666667)' will retrieve part of the exposure specified by the WCS with
           RA: 75.7044083333 degrees
           DEC: 23.9168472222 degrees
-         and a radius of 0.0166666666667 degrees (the default amount, which is set to one arcminute - 1/60 of a degree) 
-                
+         and a radius of 0.0166666666667 degrees (the default amount, which is set to one arcminute - 1/60 of a degree)
+
         :param cutout: a string specifying which part of the exposure to return
         :param return_file
         :return:
@@ -749,7 +749,7 @@ class FitsImage(FitsArtifact):
         Takes a frame number and creates a FitsImage object.
         The frame number of an exposure contains its 7-digit dataset target_name (eg. 2222222),
          its version (e.g. 'p'), and its ccd (e.g. 24).
-         
+
         :param frame: frame number
         :return: FitsImage object of the associated dataset_name and ccd
         """
@@ -788,13 +788,13 @@ class FitsImage(FitsArtifact):
         """
         Builds a cutout string from a SkyCoord object and a Quantity object.
         Calls cutout method to retrieve a sub-section of the image at the specified RA/DEC location.
-        
+
         SkyCoord object stores the RA and DEC in both hr/m/s and degree formats;
          ra_dec_cutout uses the degrees form when passing through to the cutout method.
-        
-        The radius specifies how much of the area surrounding the World Coordinate System point is returned 
+
+        The radius specifies how much of the area surrounding the World Coordinate System point is returned
          in the cutout.
-        
+
         :param skycoord: SkyCoord object with associated RA and DEC attributes
         :param return_file: what to return? True: filename,  False: HDUList
         :param radius: astropy unit.Quantity object. Specifies radius of the cutout returned from VOSpace
@@ -934,7 +934,7 @@ def set_tag(expnum, key, value):
 
 
 def tag_uri(key):
-    """Build the uri for a given tag key. 
+    """Build the uri for a given tag key.
 
     @param key: what is the key that we need a stadanrd uri tag for? eg 'mkpsf_00'
     @type key: str
@@ -1345,7 +1345,7 @@ def isfile(uri):
 
 
 def copy(source, destination):
-    """Copy a file to/from VOSpace. With upto 10 retries on errors,
+    """Copy a file to/from VOSpace. With up to 10 retries on errors,
 
     :return: content disposition value from data service
     :rtype: basestring

@@ -11,7 +11,6 @@ _DIGITS = '0123456789'
 
 def provisional(mjd, hpx, count):
     """Compute a provisional name from the date and HPX information.
-
     """
     discovery_date = Time(int(mjd), format='mjd').yday.split(':')
     discovery_day = int(discovery_date[1])
@@ -174,7 +173,8 @@ class CandidateSet(object):
                 obs.append(ob)
             return obs
         except StopIteration:
-            raise StopIteration
+            self.target = self.catalog.previous()
+            return self.previous()
 
 if __name__ == "__main__":
     print sys.argv

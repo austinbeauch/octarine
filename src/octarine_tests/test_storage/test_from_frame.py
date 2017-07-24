@@ -7,7 +7,7 @@ from daomop import storage
 class FromFrameTest(unittest.TestCase):
 
     def setUp(self):
-        self.filename = 'data/2002_VT130.0.ast'
+        self.filename = '../data/2002_VT130.0.ast'
 
     def test_return_from_string(self):
         tst = mp_ephem.ObsRecord.from_string(" 2002 VT130   C2017 03 24.22518 05 02 48.963+23 55 00.51                 "
