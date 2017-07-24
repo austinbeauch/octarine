@@ -304,7 +304,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :param qrun_id: QRUNID in a header file
         """
         if hasattr(qrun_id, 'text'):
-            self.qrun_id = qrun_id.text
+            self.qrun_id = str(qrun_id.text).strip(' ')
             self.storage_list = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
                                                              storage.CATALOG,
                                                              self.qrun_id), force=True)
@@ -638,19 +638,30 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     self.pool.apply_async(self.downloader.put, (art,))
                     if not rejected:
                         self.pool.apply_async(self.accepted_list, (art,))
+                    else:
+                        # if the
+                        self.pool.apply_async(self.remove_check, (art,))
+
                 except Exception as ex:
                     self.logger.info("Failed to write file {}: {}".format(
                         self.candidate[0].provisional_name, str(ex)))
 
-            msg = "Done Queuing {} for VOSpace write {}".format(self.candidate[0].provisional_name + ".ast",
-                                                                art.uri)
-            logging.info(msg)
-            self.logger.info(msg)
+            self.logger.info("Done Queuing {} for VOSpace write {}".format(self.candidate[0].provisional_name + ".ast",
+                                                                           art.uri))
 
         except IOError as ex:
             self.logger.info("Unable to write to file.")
             self.logger.info(str(ex))
             raise ex
+
+    def remove_check(self, art, ext='.ast'):
+        try:
+            accepted_uri = os.path.join(os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG),
+                                        self.header['QRUNID'], 'accepted', art.observation.dataset_name + ext)
+            if storage.exists(accepted_uri, force=True):
+                storage.delete(accepted_uri)
+        except LookupError:
+            pass
 
     def accepted_list(self, art, ext='.ast'):
         """
