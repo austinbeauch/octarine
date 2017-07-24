@@ -144,7 +144,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         candidate_override.add_callback('activated', lambda x: self.override_set(event=x))
         candidate_override.set_length(10)
 
-        astfile = Widgets.TextArea(editable=True)
+        astfile = Widgets.TextEntry(editable=True)
         astfile.add_callback('activated', lambda x: self.load_astfile(event=x))
 
         catalog = Widgets.TextEntrySet(text='17AQ10')
@@ -195,6 +195,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         astfile_hbox_label = Widgets.Label(text="Paste AST file here:")
         astfile_hbox.add_widget(astfile_hbox_label)
         astfile_hbox.add_widget(astfile)
+        astfile_hbox.set_margins(0, 0, 15, 0)  # top, right, bottom, left
 
         # button and text entry vbox
         buttons_vbox = Widgets.VBox()
@@ -203,7 +204,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
         buttons_vbox.add_widget(candidates_hbox)
         buttons_vbox.add_widget(astfile_hbox)
         buttons_vbox.add_widget(override_hbox)
-
 
         viewer_vbox.add_widget(buttons_vbox)  # add buttons below the viewer
 
@@ -360,6 +360,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
     def load_astfile(self, event):
         self.candidate = []
         for line in event.text.split('\n'):
+            # noinspection PyBroadException
             try:
                 obs_record = ObsRecord.from_string(line)
                 if obs_record is not None:
@@ -368,6 +369,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 logging.warning("Failed to parse line >{}<".format(line))
         self.candidates = [self.candidate]
         print self.candidate
+        self.next_set.set_enabled(False)
+        self.previous_set.set_enabled(False)
         self._download_obsrecords()
         self.load(0)
 
@@ -462,7 +465,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.candidate = None  # reset on candidate to clear it of any leftover from previous sets
         self.load()
 
-
     def _download_obsrecords(self):
         """
         Download the observations associated with the current self.candidate set of obsRecords.
@@ -523,6 +525,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
             if key not in self.image_list:
                 self.image_list[key] = self.pool.apply_async(self.downloader.get,
                                                              (comparison_obs_record,))
+
     def set_not_examined(self):
         """
         Checks if the current json file has been fully examined or not
