@@ -190,12 +190,12 @@ class ValidateGui(ipg.EnhancedCanvasView):
         override_label = Widgets.Label(text="(Optional) Override provisional name: ")
         override_hbox.add_widget(override_label)
         override_hbox.add_widget(candidate_override)
+        override_hbox.set_margins(0, 0, 15, 0)  # top, right, bottom, left
 
         astfile_hbox = Widgets.HBox()
         astfile_hbox_label = Widgets.Label(text="Paste AST file here:")
         astfile_hbox.add_widget(astfile_hbox_label)
         astfile_hbox.add_widget(astfile)
-        astfile_hbox.set_margins(0, 0, 15, 0)  # top, right, bottom, left
 
         # button and text entry vbox
         buttons_vbox = Widgets.VBox()
@@ -249,7 +249,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
             except Exception as ex:
                 self.logger.info('Loading next candidate set failed.')
                 if isinstance(ex, StopIteration):
-                    self.logger.info('StopIteration error: End of candidate set.'
+                    self.logger.info('StopIteration error: End of candidate set. '
                                      'Hit "Load" button to move onto the next set.')
                     self.previous_set.set_enabled(True)
                     self.load_json.set_enabled(True)
@@ -378,7 +378,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
          accepted candidates.
         """
         if hasattr(event, 'text'):
-            self.override = str(event.text)
+            self.override = str(event.text).strip(' ')
             self.logger.info("Will override {}.".format(self.override))
 
     def load_candidates(self, pixel=None):
@@ -394,7 +394,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
             if self.pixel == 0:  # base case (when there are no more open candidate sets in the VOSpace directory)
                 self.logger.info("No more candidate sets for this QRUNID.")
                 raise StopIteration
-            elif self.set_not_examined():
+            elif not self.set_examined():
                 break
             else:
                 self.pixel = self.lookup()
@@ -470,11 +470,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 self.image_list[key] = self.pool.apply_async(self.downloader.get,
                                                              (comparison_obs_record,))
 
-    def set_not_examined(self):
+    def set_examined(self):
         """
         Checks if the current json file has been fully examined or not
 
-        :return False if the directory is fully examined and there's no override, true if it has not been examined.
+        :return True if the directory is fully examined and there's no override, False if it has not been examined.
         """
         self.logger.info("Accepted candidate entry: {}".format(self.pixel))
         try:
@@ -488,7 +488,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     filename = self.override+'.ast'
                     if filename in sub_directory:
                         self.logger.info("Overriding {}.".format(filename))
-                        return True
+                        return False
                 else:
                     count = 0
                     # counting the total amount of candidates that are in self.candidates
@@ -502,24 +502,24 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     directory_length = len(sub_directory)
                     if count == directory_length:
                         self.logger.info("Candidate set {} fully examined.".format(self.pixel))
-                        return False
+                        return True
 
                     elif count > directory_length:
                         self.logger.info("Candidate set {} not fully examined.".format(self.pixel))
-                        return True
+                        return False
 
                     else:
-                        logging.error("Value error: count {} or directory_length {} is out of range."
-                                      .format(count, directory_length))
+                        self.logger.error("Value error: count {} or directory_length {} is out of range."
+                                          .format(count, directory_length))
                         raise ValueError
 
-            return True  # no length check, therefor no directory has been created and this set isn't examined
+            return False  # no length check, therefor no directory has been created and this set isn't examined
 
         except Exception as ex:
             self.logger.info("Failed to load candidates: {}".format(str(ex)))
             if isinstance(ex, StopIteration):
                 self.logger.info('StopIteration error. Candidate set might be empty.')
-                return False  # continue with iteration
+                return True  # continue with iteration
             else:
                 raise ex
 
@@ -582,9 +582,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
                 if self.zoom is not None:
                     self.zoom_to(self.zoom)
-
                 self._rotate()
-
                 if self.center is not None:
                     self._align()
 
