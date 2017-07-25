@@ -24,6 +24,7 @@ LEGEND = 'Keyboard Shortcuts: \n' \
          'q: pan mode \n(click and drag on canvas)\n' \
          't: contrast mode \n(right click on canvas after pressing "t" to reset contrast)\n' \
          'esc: reset keyboard mode\n'
+ACCEPTED_DIRECTORY = 'accepted'
 PROCESSES = 5
 
 
@@ -635,12 +636,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.logger.info("Queuing job to write file to VOSpace.")
             with self.lock:
                 try:
-                    self.pool.apply_async(self.downloader.put, (art,))
-                    if not rejected:
-                        self.pool.apply_async(self.accepted_list, (art,))
-                    else:
-                        # if the
+                    if rejected:
+                        self.pool.apply_async(self.downloader.put, (art,))
                         self.pool.apply_async(self.remove_check, (art,))
+                    elif not rejected:
+                        self.pool.apply_async(self.accepted_list, (art,))
 
                 except Exception as ex:
                     self.logger.info("Failed to write file {}: {}".format(
@@ -655,12 +655,19 @@ class ValidateGui(ipg.EnhancedCanvasView):
             raise ex
 
     def remove_check(self, art, ext='.ast'):
+        """
+        Checks a file's existence in its /accepted/ VOSpace directory. Removes the file if present.
+
+        :param art: artifact who's being checked for existence
+        :param ext: file type
+        """
+        # noinspection PyBroadException
         try:
             accepted_uri = os.path.join(os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG),
-                                        self.header['QRUNID'], 'accepted', art.observation.dataset_name + ext)
+                                        self.header['QRUNID'], ACCEPTED_DIRECTORY, art.observation.dataset_name + ext)
             if storage.exists(accepted_uri, force=True):
                 storage.delete(accepted_uri)
-        except LookupError:
+        except:
             pass
 
     def accepted_list(self, art, ext='.ast'):
@@ -670,9 +677,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :param art: Artifact object containing the proper file name
         :param ext: file extension
         """
-        # 'vos:cfis/solar_system/dbimages/catalogs/<QRUNID>/acepted/<dataset_name>.ast
+        # 'vos:cfis/solar_system/dbimages/catalogs/<QRUNID>/accepted/<dataset_name>.ast
         destination = os.path.join(os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG),
-                                   self.header['QRUNID'], 'accepted', art.observation.dataset_name + ext)
+                                   self.header['QRUNID'], ACCEPTED_DIRECTORY, art.observation.dataset_name + ext)
         try:
             storage.make_path(destination)
             storage.copy(art.filename, destination)
