@@ -36,7 +36,10 @@ def completed(pixel, expnum, version, ccd, catalog_dir):
     catalog = storage.FitsTable(observation, version=version, ccd=ccd, ext='.cat.fits')
     dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
     hpx_catalog = storage.HPXCatalog(pixel, catalog_dir=catalog_dir)
-    return dataset_name in hpx_catalog.table['dataset_name']
+    try:
+        return dataset_name in hpx_catalog.table['dataset_name']
+    except NotFoundException:
+        return False
 
 
 def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=storage.CATALOG):
