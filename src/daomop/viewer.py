@@ -6,6 +6,7 @@ from math import atan2, degrees
 from multiprocessing.pool import ApplyResult
 
 from astropy.time import Time
+from cadcutils.exceptions import NotFoundException
 from mp_ephem import ObsRecord
 
 from . import candidate
@@ -107,6 +108,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.previous_set = Widgets.Button("< Previous Set")
         self.load_json = Widgets.Button("Load")
         self.clear_button = Widgets.Button("Clear")
+        self.yes_button = Widgets.Button("Yes")
+        self.no_button = Widgets.Button("No")
+        self.warning = Widgets.Label("In case you want to reject a previously accepted candidate: ")
 
         self.legend = Widgets.TextArea(wrap=True)
         self.legend.set_text(LEGEND)
@@ -148,7 +152,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         astfile = Widgets.TextEntry(editable=True)
         astfile.add_callback('activated', lambda x: self.load_astfile(event=x))
 
-        catalog = Widgets.TextEntrySet(text='17AQ10')
+        catalog = Widgets.TextEntrySet(text='17AQ06')
         catalog.add_callback('activated', lambda x: self.set_qrun_id(x))
         catalog.set_length(5)
 
@@ -222,7 +226,14 @@ class ValidateGui(ipg.EnhancedCanvasView):
         full_vbox.add_widget(self.console_box)
         self.console_box.set_text('Logging output:\n')
         self.header_box.set_text("Header:")
+
         container.set_widget(full_vbox)
+        container.set_widget(self.warning)
+        container.set_widget(self.yes_button)
+        container.set_widget(self.no_button)
+        self.yes_button.set_enabled(False)
+        self.no_button.set_enabled(False)
+        self.buttons_off()
 
     def next(self):
         """
@@ -238,9 +249,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 self.candidate = self.candidates.next()
 
                 # finding next candidate to load depending on which .ast files are written
-                while True:
-                    if not self.ast_exists():
-                        break
+                while self.ast_exists():
                     self.candidate = self.candidates.next()
 
                 self.logger.info("Loading {}...".format(self.candidate[0].provisional_name))
@@ -250,8 +259,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
             except Exception as ex:
                 self.logger.info('Loading next candidate set failed.')
                 if isinstance(ex, StopIteration):
-                    self.logger.info('StopIteration error: End of candidate set. '
-                                     'Hit "Load" button to move onto the next set.')
+                    self.logger.info('StopIteration error: End of candidate set.')
+                    self.logger.info('Hit "Load" button to move onto the next set.')
                     self.previous_set.set_enabled(True)
                     self.load_json.set_enabled(True)
 
@@ -296,6 +305,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :param rejected: whether the candidate set has been accepted or rejected
         """
         self.logger.info("Rejected.") if rejected else self.logger.info("Accepted.")
+        self.buttons_off()
         if self.candidates is not None:
             self.write_record(rejected=rejected)
             self.next()
@@ -367,6 +377,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     self.candidate.append(obs_record)
             except:
                 logging.warning("Failed to parse line >{}<".format(line))
+        self.logger.info("Accepted AST file.")
         self.candidates = [self.candidate]
         self.next_set.set_enabled(False)
         self.previous_set.set_enabled(False)
@@ -390,15 +401,14 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         if pixel is None:
             self.pixel = self.lookup()
-        self.load_json.set_enabled(False)
-        while True:
+
+        self.buttons_off()
+
+        while self.pixel != 0 and self.set_examined():
+            self.pixel = self.lookup()
             if self.pixel == 0:  # base case (when there are no more open candidate sets in the VOSpace directory)
                 self.logger.info("No more candidate sets for this QRUNID.")
                 raise StopIteration
-            elif not self.set_examined():
-                break
-            else:
-                self.pixel = self.lookup()
 
         self.logger.warning("Launching image prefetching. Please be patient.")
 
@@ -601,6 +611,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 self.logger.info("Skipping candidate {} due to load failure."
                                  .format(self.candidate[0].provisional_name))
                 self.next()
+                break
 
     def mark_aperture(self):
         """
@@ -637,17 +648,15 @@ class ValidateGui(ipg.EnhancedCanvasView):
             with self.lock:
                 try:
                     if rejected:
-                        self.pool.apply_async(self.downloader.put, (art,))
-                        self.pool.apply_async(self.remove_check, (art,))
+                        self.remove_check(art)
                     elif not rejected:
                         self.pool.apply_async(self.accepted_list, (art,))
+                        self.logger.info(
+                            "Done Queuing {} for VOSpace write.".format(self.candidate[0].provisional_name + ".ast"))
 
                 except Exception as ex:
                     self.logger.info("Failed to write file {}: {}".format(
                         self.candidate[0].provisional_name, str(ex)))
-
-            self.logger.info("Done Queuing {} for VOSpace write {}".format(self.candidate[0].provisional_name + ".ast",
-                                                                           art.uri))
 
         except IOError as ex:
             self.logger.info("Unable to write to file.")
@@ -656,7 +665,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
     def remove_check(self, art, ext='.ast'):
         """
-        Checks a file's existence in its /accepted/ VOSpace directory. Removes the file if present.
+        Checks a file's existence in its /accepted/ VOSpace directory. If the uri can't be found, there must not be
+         a file in it's accepted directory, so a standard null observation file is uploaded.
+        Prompts user to make a decision if the file already exists.
 
         :param art: artifact who's being checked for existence
         :param ext: file type
@@ -665,10 +676,51 @@ class ValidateGui(ipg.EnhancedCanvasView):
         try:
             accepted_uri = os.path.join(os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG),
                                         self.header['QRUNID'], ACCEPTED_DIRECTORY, art.observation.dataset_name + ext)
-            if storage.exists(accepted_uri, force=True):
-                storage.delete(accepted_uri)
-        except:
-            pass
+            if storage.exists(accepted_uri):
+                self.yes_button.set_enabled(True)
+                self.no_button.set_enabled(True)
+
+                self.yes_button.add_callback('activated', lambda x: self.move_accepted(accepted_uri, art))
+                self.no_button.add_callback('activated', lambda x: self.remain_unchanged())
+
+                self.logger.warning("File already accepted.")
+                self.warning.set_text("FILE {} HAS ALREADY BEEN ACCEPTED, ARE YOU SURE YOU WANT TO REJECT IT?"
+                                      .format(art.observation.dataset_name))
+
+                self.warning.set_color(fg='white', bg='red')
+
+        except Exception as ex:
+            if isinstance(ex, NotFoundException):
+                self.pool.apply_async(self.downloader.put, (art,))
+                self.logger.info(
+                    "Done Queuing {} for VOSpace write {}".format(self.candidate[0].provisional_name + ".ast", art.uri))
+
+    def move_accepted(self, accepted_uri, art):
+        """
+        Deletes the file at the uri and queue's a thread to write the file in a new destination as a rejected
+        observation. Disables buttons and resets label.
+
+        :param accepted_uri: uri of the accepted file
+        :param art: artifact object for the record being examined
+        """
+        storage.delete(accepted_uri)
+        self.logger.info("Deleted {}".format(accepted_uri))
+        self.pool.apply_async(self.downloader.put, (art,))
+        self.logger.info("Done Queuing {} for VOSpace write {}".format(self.candidate[0].provisional_name + ".ast",
+                                                                       art.uri))
+        self.yes_button.set_enabled(False)
+        self.no_button.set_enabled(False)
+        self.warning.set_text("In case you want to reject a previously accepted candidate: ")
+        self.warning.set_color(fg='black', bg='white')
+
+    def remain_unchanged(self):
+        """
+        Method that serves as a callback destination. Disables yes/no buttons and resets label text.
+        """
+        self.yes_button.set_enabled(False)
+        self.no_button.set_enabled(False)
+        self.warning.set_text("In case you want to reject a previously accepted candidate: ")
+        self.warning.set_color(fg='black', bg='white')
 
     def accepted_list(self, art, ext='.ast'):
         """
@@ -678,11 +730,14 @@ class ValidateGui(ipg.EnhancedCanvasView):
         :param ext: file extension
         """
         # 'vos:cfis/solar_system/dbimages/catalogs/<QRUNID>/accepted/<dataset_name>.ast
+        # Since this just uploads an unintuitive name in the directory, perhaps the path could be changed to
+        #  ../accepted/<pixel>/<dataset_name>.ast
         destination = os.path.join(os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG),
                                    self.header['QRUNID'], ACCEPTED_DIRECTORY, art.observation.dataset_name + ext)
         try:
             storage.make_path(destination)
             storage.copy(art.filename, destination)
+
         except Exception as ex:
             self.logger.info("Failed writing to accepted directory for {}: {}"
                              .format(art.observation.dataset_name, str(ex)))
@@ -812,15 +867,19 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.previous_set.set_enabled(True)
         self.accept.set_enabled(True)
         self.reject.set_enabled(True)
+        self.clear_button.set_enabled(True)
+        self.load_json.set_enabled(True)
 
     def buttons_off(self):
         """
-        Deactivate most GUI buttons
+        Deactivate some GUI buttons
         """
         self.next_set.set_enabled(False)
         self.previous_set.set_enabled(False)
         self.accept.set_enabled(False)
         self.reject.set_enabled(False)
+        self.clear_button.set_enabled(False)
+        self.load_json.set_enabled(False)
 
     @property
     def center(self):
