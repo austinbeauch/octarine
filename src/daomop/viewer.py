@@ -110,7 +110,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.clear_button = Widgets.Button("Clear")
         self.yes_button = Widgets.Button("Yes")
         self.no_button = Widgets.Button("No")
-        self.warning = Widgets.Label("In case you want to reject a previously accepted candidate: ")
+        self.warning = Widgets.Label("In case you try to reject a previously accepted candidate: ")
 
         self.legend = Widgets.TextArea(wrap=True)
         self.legend.set_text(LEGEND)
@@ -677,11 +677,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
             accepted_uri = os.path.join(os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG),
                                         self.header['QRUNID'], ACCEPTED_DIRECTORY, art.observation.dataset_name + ext)
             if storage.exists(accepted_uri):
+                self.yes_button.add_callback('activated', lambda x: self.move_accepted(accepted_uri, art))
+                self.no_button.add_callback('activated', lambda x: self.warning_label_reset())
                 self.yes_button.set_enabled(True)
                 self.no_button.set_enabled(True)
-
-                self.yes_button.add_callback('activated', lambda x: self.move_accepted(accepted_uri, art))
-                self.no_button.add_callback('activated', lambda x: self.remain_unchanged())
 
                 self.logger.warning("File already accepted.")
                 self.warning.set_text("FILE {} HAS ALREADY BEEN ACCEPTED, ARE YOU SURE YOU WANT TO REJECT IT?"
@@ -691,9 +690,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         except Exception as ex:
             if isinstance(ex, NotFoundException):
-                self.pool.apply_async(self.downloader.put, (art,))
-                self.logger.info(
-                    "Done Queuing {} for VOSpace write {}".format(self.candidate[0].provisional_name + ".ast", art.uri))
+                self.write_rejected(art)
+            else:
+                self.logger.error(str(ex))
+                raise ex
 
     def move_accepted(self, accepted_uri, art):
         """
@@ -705,22 +705,27 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         storage.delete(accepted_uri)
         self.logger.info("Deleted {}".format(accepted_uri))
-        self.pool.apply_async(self.downloader.put, (art,))
-        self.logger.info("Done Queuing {} for VOSpace write {}".format(self.candidate[0].provisional_name + ".ast",
-                                                                       art.uri))
-        self.yes_button.set_enabled(False)
-        self.no_button.set_enabled(False)
-        self.warning.set_text("In case you want to reject a previously accepted candidate: ")
-        self.warning.set_color(fg='black', bg='white')
+        self.write_rejected(art)
+        self.warning_label_reset()
 
-    def remain_unchanged(self):
+    def warning_label_reset(self):
         """
         Method that serves as a callback destination. Disables yes/no buttons and resets label text.
         """
         self.yes_button.set_enabled(False)
         self.no_button.set_enabled(False)
-        self.warning.set_text("In case you want to reject a previously accepted candidate: ")
+        self.warning.set_text("In case you try to reject a previously accepted candidate: ")
         self.warning.set_color(fg='black', bg='white')
+
+    def write_rejected(self, art):
+        """
+        Start a thread to write the rejected artifact to its uri
+
+        :param art: Artifact object
+        """
+        self.pool.apply_async(self.downloader.put, (art,))
+        self.logger.info("Done Queuing {} for VOSpace write {}".format(self.candidate[0].provisional_name + ".ast",
+                                                                       art.uri))
 
     def accepted_list(self, art, ext='.ast'):
         """
@@ -737,7 +742,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
         try:
             storage.make_path(destination)
             storage.copy(art.filename, destination)
-
         except Exception as ex:
             self.logger.info("Failed writing to accepted directory for {}: {}"
                              .format(art.observation.dataset_name, str(ex)))
