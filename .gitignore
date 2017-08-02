@@ -56,7 +56,10 @@ distribute-*.tar.gz
 .tox
 .*.sw[op]
 *~
+.thumbs
 
 # Mac OSX
 .DS_Store
 
+# HPX Catalog files
+HPX*
