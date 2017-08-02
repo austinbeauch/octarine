@@ -36,7 +36,10 @@ def completed(pixel, expnum, version, ccd, catalog_dir):
     catalog = storage.FitsTable(observation, version=version, ccd=ccd, ext='.cat.fits')
     dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
     hpx_catalog = storage.HPXCatalog(pixel, catalog_dir=catalog_dir)
-    return dataset_name in hpx_catalog.table['dataset_name']
+    try:
+        return dataset_name in hpx_catalog.table['dataset_name']
+    except NotFoundException:
+        return False
 
 
 def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=storage.CATALOG):
@@ -167,8 +170,6 @@ def match(pixel, expnum, ccd):
     catalog.table['HPXID'][cond] = hpx_cat_len + numpy.arange(cond.sum())
     catalog.table['MATCHES'] = 0
     catalog.table['OVERLAPS'] = 0
-    # Now append these new source (cond) to the end of the master catalog.
-    split_to_hpx(pixel, catalog, catalog_dir=master_catalog_dirname)
 
     for match_set in match_list:
         logging.info("trying to match against catalog {}p{:02d}.cat.fits".format(match_set[0], match_set[1]))
@@ -204,6 +205,9 @@ def match(pixel, expnum, ccd):
             pass
         except DependencyError as ex:
             logging.error(str(ex))
+
+    # Now append to the end of the master catalog.
+    split_to_hpx(pixel, catalog, catalog_dir=master_catalog_dirname)
 
     return catalog
 
