@@ -170,8 +170,6 @@ def match(pixel, expnum, ccd):
     catalog.table['HPXID'][cond] = hpx_cat_len + numpy.arange(cond.sum())
     catalog.table['MATCHES'] = 0
     catalog.table['OVERLAPS'] = 0
-    # Now append these new source (cond) to the end of the master catalog.
-    split_to_hpx(pixel, catalog, catalog_dir=master_catalog_dirname)
 
     for match_set in match_list:
         logging.info("trying to match against catalog {}p{:02d}.cat.fits".format(match_set[0], match_set[1]))
@@ -207,6 +205,9 @@ def match(pixel, expnum, ccd):
             pass
         except DependencyError as ex:
             logging.error(str(ex))
+
+    # Now append to the end of the master catalog.
+    split_to_hpx(pixel, catalog, catalog_dir=master_catalog_dirname)
 
     return catalog
 
