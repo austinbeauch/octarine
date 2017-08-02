@@ -302,7 +302,7 @@ class Observation(object):
 class Artifact(object):
 
     def __init__(self, observation, version=PROCESSED_VERSION,
-                 ccd=None, subdir=None, ext=IMAGE_EXT, prefix=None):
+                 ccd=None, subdir=None, ext=IMAGE_EXT, prefix=None, dest_directory=None):
         """
         :type version: str
         :type observation: Observation
@@ -314,6 +314,8 @@ class Artifact(object):
         """
         self.observation = observation
         self.ccd = ccd
+        self._dest_directory = None
+        self.dest_directory = dest_directory
         self._subdir = subdir
         self._ext = ext
         self._version = version
@@ -389,7 +391,20 @@ class Artifact(object):
 
     @property
     def filename(self):
-        return os.path.basename(self.uri)
+        if not os.path.exists(self.dest_directory):
+            os.mkdir(self.dest_directory)
+        return os.path.join(self.dest_directory, os.path.basename(self.uri))
+
+    @property
+    def dest_directory(self):
+        return self._dest_directory
+
+    @dest_directory.setter
+    def dest_directory(self, value):
+        if value is not None:
+            self._dest_directory = value
+        else:
+            self._dest_directory = os.getcwd()
 
     def put(self):
         """Put the artifact to VOSpace."""
