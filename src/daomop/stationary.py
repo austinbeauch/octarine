@@ -35,7 +35,8 @@ def completed(pixel, expnum, version, ccd, catalog_dir):
     observation = storage.Observation(expnum)
     catalog = storage.FitsTable(observation, version=version, ccd=ccd, ext='.cat.fits')
     dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
-    hpx_catalog = storage.HPXCatalog(pixel, catalog_dir=catalog_dir)
+    dest_directory = os.path.basename(catalog_dir)
+    hpx_catalog = storage.HPXCatalog(pixel, catalog_dir=catalog_dir, dest_directory=dest_directory)
     try:
         return dataset_name in hpx_catalog.table['dataset_name']
     except NotFoundException:
@@ -88,13 +89,14 @@ def split_to_hpx(pixel, catalog, catalog_dir=None):
     
     pix = pixel
     logging.info("merging {} into HPX catalog stored at {}".format(catalog, catalog_dir))
+    dest_directory = catalog_dir is not None and os.path.basename(catalog_dir) or "./"
     try:
-        healpix_catalog = storage.HPXCatalog(pixel=pix, catalog_dir=catalog_dir)
+        healpix_catalog = storage.HPXCatalog(pixel=pix, catalog_dir=catalog_dir, dest_directory=dest_directory)
         healpix_catalog.get()
         healpix_catalog.table = healpix_catalog.table[healpix_catalog.table['dataset_name'] != dataset_name]
         healpix_catalog.table = vstack([healpix_catalog.table, catalog.table[catalog.table['HEALPIX'] == pix]])
     except NotFoundException:
-        healpix_catalog = storage.HPXCatalog(pixel=pix)
+        healpix_catalog = storage.HPXCatalog(pixel=pix, catalog_dir=catalog_dir, dest_directory=dest_directory)
         healpix_catalog.hdulist = fits.HDUList()
         healpix_catalog.hdulist.append(catalog.hdulist[0])
         healpix_catalog.table = catalog.table[catalog.table['HEALPIX'] == pix]
@@ -150,7 +152,8 @@ def match(pixel, expnum, ccd):
     master_catalog_dirname = "catalogs/master"
     storage.mkdir("{}/{}".format(storage.DBIMAGES, master_catalog_dirname))
 
-    hpx_cat = storage.HPXCatalog(pixel=healpix, catalog_dir=master_catalog_dirname)
+    dest_directory = os.path.basename(master_catalog_dirname)
+    hpx_cat = storage.HPXCatalog(pixel=healpix, catalog_dir=master_catalog_dirname, dest_directory=dest_directory)
     hpx_cat_len = 0
 
     try:
