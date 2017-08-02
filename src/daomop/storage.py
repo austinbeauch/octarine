@@ -13,12 +13,10 @@ from astropy.coordinates import SkyCoord
 from astropy import units
 from astropy.table import Table
 from astropy.io import fits, ascii
-from astropy.io.fits import PrimaryHDU
 from astropy.time import Time
 from cadcutils.exceptions import BadRequestException, AlreadyExistsException, NotFoundException
 from numpy.linalg import LinAlgError
 from sip_tpv import pv_to_sip
-from copy import deepcopy
 from . import util
 import vospace
 from wcs import WCS
@@ -60,7 +58,7 @@ FLATS_VOSPACE = 'vos:sgwyn/flats'
 ARCHIVE = 'CFHT'
 DEFAULT_FORMAT = 'fits'
 NSIDE = 32
-
+MOVING_TARGET_VERSION = '_bk'
 # default radius to be "cut out" when calling ra_dec_cutout. Set to .1 arc minute, or 1/360th of a degree
 CUTOUT_RADIUS = 0.4 * units.arcminute
 
@@ -304,7 +302,7 @@ class Observation(object):
 class Artifact(object):
 
     def __init__(self, observation, version=PROCESSED_VERSION,
-                 ccd=None, subdir=None, ext=IMAGE_EXT, prefix=None):
+                 ccd=None, subdir=None, ext=IMAGE_EXT, prefix=None, dest_directory=None):
         """
         :type version: str
         :type observation: Observation
@@ -316,6 +314,8 @@ class Artifact(object):
         """
         self.observation = observation
         self.ccd = ccd
+        self._dest_directory = None
+        self.dest_directory = dest_directory
         self._subdir = subdir
         self._ext = ext
         self._version = version
@@ -391,7 +391,20 @@ class Artifact(object):
 
     @property
     def filename(self):
-        return os.path.basename(self.uri)
+        if not os.path.exists(self.dest_directory):
+            os.mkdir(self.dest_directory)
+        return os.path.join(self.dest_directory, os.path.basename(self.uri))
+
+    @property
+    def dest_directory(self):
+        return self._dest_directory
+
+    @dest_directory.setter
+    def dest_directory(self, value):
+        if value is not None:
+            self._dest_directory = value
+        else:
+            self._dest_directory = os.getcwd()
 
     def put(self):
         """Put the artifact to VOSpace."""
@@ -511,7 +524,7 @@ class FitsImage(FitsArtifact):
         self._footprint = None
         self._polygon = None
         self._filename = None
-    
+
     @property
     def ccd(self):
         return self._ccd
@@ -618,8 +631,8 @@ class FitsImage(FitsArtifact):
     def flat_field_name(self):
         """
         Looks up the flat_field_name using the header keywords 'FLAT', defaults to 'weight.fits'
-        
-        :return: 
+
+        :return:
         """
 
         if self._flat_field_name is not None:
@@ -641,24 +654,23 @@ class FitsImage(FitsArtifact):
         copy(uri, filename)
         return open(filename).read()
 
-    def cutout(self, cutout, return_file=False, convert_to_sip=True):
+    def cutout(self, cutout, return_file=False, trim_to_datasec=False):
         """
-        Given a string such as '[CCD]', '[CCD][x1:x2,y1:y2]', or '(RA,DEC,RADIUS)', 
+        Given a string such as '[CCD]', '[CCD][x1:x2,y1:y2]', or '(RA,DEC,RADIUS)',
          retrieve that portion of the image from VOSpace.
-        
+
         For example:
-        
+
         '[23]' will retrieve the entire CCD #23 from VOSpace.
-        
+
         '[23][100:300,100:400]' will retrieve the specified x/y pixel section from CCD 23.
-         
-        '(75.7044083333, 23.9168472222, 0.0166666666667)' will retrieve part of the exposure specified by the WCS with  
+
+        '(75.7044083333, 23.9168472222, 0.0166666666667)' will retrieve part of the exposure specified by the WCS with
           RA: 75.7044083333 degrees
           DEC: 23.9168472222 degrees
-         and a radius of 0.0166666666667 degrees (the default amount, which is set to one arcminute - 1/60 of a degree) 
-                
+         and a radius of 0.0166666666667 degrees (the default amount, which is set to one arcminute - 1/60 of a degree)
+
         :param cutout: a string specifying which part of the exposure to return
-        :param convert_to_sip: Should we convert the header keywords to SIP format?
         :param return_file
         :return:
         """
@@ -671,12 +683,15 @@ class FitsImage(FitsArtifact):
                 return fits.open(self.filename)
 
         fpt = tempfile.NamedTemporaryFile(suffix='.fits')
+        cutout_list = []
         try:
-            copy(self.uri + cutout, fpt.name)
+            content_disposition = copy(self.uri + cutout, fpt.name)
+            cutout_list = decompose_content_decomposition(content_disposition)
         except BadRequestException as bre:
             if "No matching data" in str(bre):
                 logging.error(str(bre))
                 return []
+            raise bre
         except NotFoundException:
             self._ext = ".fits"
             copy(self.uri + cutout, fpt.name)
@@ -685,38 +700,36 @@ class FitsImage(FitsArtifact):
         hdu_list = fits.open(fpt, scale_back=False)
         hdu_list.verify('silentfix+ignore')
 
-        # hdu_list[0].header['DATASEC'] = reset_datasec(cutout,
-        #                                               hdu_list[0].header['DATASEC'],
-        #                                               hdu_list[0].header['NAXIS1'],
-        #                                               hdu_list[0].header['NAXIS2'])
+        for hdu in hdu_list:
+            if hdu.header['NAXIS'] == 0:
+                continue
+            try:
+                cutout = cutout_list.pop(0)
+                cutout = "[{}:{},{}:{}]".format(cutout[1], cutout[2], cutout[3], cutout[4])
+            except:
+                break
+            hdu.header['DATASEC'] = reset_datasec(cutout,
+                                                  hdu.header['DATASEC'],
+                                                  hdu.header['NAXIS1'],
+                                                  hdu.header['NAXIS2'])
+            if trim_to_datasec:
+                datasec = hdu.header['DATASEC'][1:-1].replace(':', ',').split(',')
+                d = map(int, datasec)
+                hdu.data = hdu.data[d[2] - 1:d[3], d[0] - 1:d[1]]
+                hdu.header['CRPIX1'] = hdu.header.get('CRPIX1', 0) - (d[0] - 1)
+                hdu.header['CRPIX2'] = hdu.header.get('CRPIX2', 0) - (d[0] - 1)
 
         if not hdu_list:
             raise OSError(errno.EFAULT, "Failed to retrieve cutout of image", self.uri)
 
-        # if the hdu_list has more than one entry, it's a multi extension file. First item in the list is the
-        # PrimaryHDU which contains no PV keywords (so it is skipped over) and the next ones are ImageHDU's
-        # which do contain PV keywords.
-        # TODO: Add more rigorous testing to see if hdu_list contains a multi extension file?
-        if len(hdu_list) > 1:
-            for index, hdu in enumerate(hdu_list):
-                if isinstance(hdu, PrimaryHDU):  # skip over primaryHDU (contains no PV keywords)
-                    continue
-                header = deepcopy(hdu_list[index].header)
-                if convert_to_sip:
-                    try:
-                        pv_to_sip(header)
-                        hdu.header = header
-                    except LinAlgError as lin_alg_error:
-                        logging.error("PV_TO_SIP FAILED: {}".format(lin_alg_error))
-
-        else:
-            header = deepcopy(hdu_list[0].header)
-            if convert_to_sip:
-                try:
-                    pv_to_sip(header)
-                    hdu_list[0].header = header
-                except LinAlgError as lin_alg_error:
-                    logging.error("PV_TO_SIP FAILED: {}".format(lin_alg_error))
+        # transform PV keywords to SIP in non-empty hdu.
+        for hdu in hdu_list:
+            if hdu.header["NAXIS"] == 0 and "NORDFIT" not in hdu.header:
+                continue
+            try:
+                pv_to_sip(hdu.header)
+            except LinAlgError as lin_alg_error:
+                logging.error("PV_TO_SIP FAILED: {}".format(lin_alg_error))
 
         if self.ccd is None:
             # build a list of CCD headers as we didn't do a CCD based cutout so need an MEF of headers.
@@ -751,7 +764,7 @@ class FitsImage(FitsArtifact):
         Takes a frame number and creates a FitsImage object.
         The frame number of an exposure contains its 7-digit dataset target_name (eg. 2222222),
          its version (e.g. 'p'), and its ccd (e.g. 24).
-         
+
         :param frame: frame number
         :return: FitsImage object of the associated dataset_name and ccd
         """
@@ -784,22 +797,21 @@ class FitsImage(FitsArtifact):
 
         ccd = "[{}]".format(self.ccd+1)
 
-        return self.cutout(cutout=ccd, return_file=return_file, convert_to_sip=convert_to_sip)
+        return self.cutout(cutout=ccd, return_file=return_file)
 
-    def ra_dec_cutout(self, skycoord, radius=CUTOUT_RADIUS, return_file=False, convert_to_sip=True):
+    def ra_dec_cutout(self, skycoord, radius=CUTOUT_RADIUS, return_file=False, trim_to_datasec=False):
         """
         Builds a cutout string from a SkyCoord object and a Quantity object.
         Calls cutout method to retrieve a sub-section of the image at the specified RA/DEC location.
-        
+
         SkyCoord object stores the RA and DEC in both hr/m/s and degree formats;
          ra_dec_cutout uses the degrees form when passing through to the cutout method.
-        
-        The radius specifies how much of the area surrounding the World Coordinate System point is returned 
+
+        The radius specifies how much of the area surrounding the World Coordinate System point is returned
          in the cutout.
-        
+
         :param skycoord: SkyCoord object with associated RA and DEC attributes
         :param return_file: what to return? True: filename,  False: HDUList
-        :param convert_to_sip: convert header PV keywords to SIP version? 
         :param radius: astropy unit.Quantity object. Specifies radius of the cutout returned from VOSpace
         """
 
@@ -817,7 +829,7 @@ class FitsImage(FitsArtifact):
         # Formatting coordinates as decimal degrees into a string
         ra_dec = "({},{},{})".format(skycoord.ra.deg, skycoord.dec.deg, radius.to('degree').value)
 
-        return self.cutout(cutout=ra_dec, return_file=return_file, convert_to_sip=convert_to_sip)
+        return self.cutout(cutout=ra_dec, return_file=return_file, trim_to_datasec=trim_to_datasec)
 
 
 class HPXCatalog(FitsTable):
@@ -865,7 +877,7 @@ class JSONCatalog(HPXCatalog):
     """
     def __init__(self, pixel, catalog_dir=None):
         directory = os.path.join(CATALOG, catalog_dir)
-        super(JSONCatalog, self).__init__(pixel, version="_mjdalltracks", ext=".json", catalog_dir=directory)
+        super(JSONCatalog, self).__init__(pixel, version=MOVING_TARGET_VERSION, ext=".json", catalog_dir=directory)
         self._json = None
 
     @property
@@ -937,7 +949,7 @@ def set_tag(expnum, key, value):
 
 
 def tag_uri(key):
-    """Build the uri for a given tag key. 
+    """Build the uri for a given tag key.
 
     @param key: what is the key that we need a stadanrd uri tag for? eg 'mkpsf_00'
     @type key: str
@@ -1348,11 +1360,15 @@ def isfile(uri):
 
 
 def copy(source, destination):
-    """Copy a file to/from VOSpace. With upto 10 retries on errors"""
+    """Copy a file to/from VOSpace. With up to 10 retries on errors,
+
+    :return: content disposition value from data service
+    :rtype: basestring
+    """
     count = 1
     while True:
         try:
-            return vospace.client.copy(source, destination)
+            return vospace.client.copy(source, destination, disposition=True)
         except OSError as ex:
             if ex.errno == errno.ENOENT:
                 raise ex

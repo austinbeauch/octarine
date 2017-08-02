@@ -12,8 +12,9 @@ class Downloader(object):
     @staticmethod
     def image_key(obs_record):
         """
+        Return the observation record's key.
 
-        :param obs_record: the observation record to get the key for.
+        :param obs_record: the observation record whose key is returned
         :type obs_record: mp_ephem.ObsRecord
         :return: the key for the given observation record.
         """
@@ -21,12 +22,12 @@ class Downloader(object):
 
     def get(self, obs_record):
         """
-        Returns the HDU of a given observation record.
+        Returns the HDUList of a given observation record.
         Uses locks on threads for multiprocessing to retrieve multiple HDU's in parallel.
 
         :param obs_record: the ObsRecord for which the image is to be retrieved
         :type obs_record: mp_ephem.ObsRecord
-        :return: astropy.io.fits.hdu.image.PrimaryHDU
+        :return: astropy.io.fits.hdu.image.HDUList
         """
         with self.lock:
             if self.image_key(obs_record) not in self.locks:
@@ -38,28 +39,29 @@ class Downloader(object):
 
         return self._downloaded_images[self.image_key(obs_record)]
 
-    def put(self, artifact):
+    @staticmethod
+    def put(artifact):
         """
+        Put the artifact to its database.
 
         :param artifact: the file object to store to VOSpace
          :type artifact: storage.Artifact
-        :return:
         """
         # Lock off other network actions while upload in progress.
         artifact.put()
 
     def get_hdu(self, obs_record):
         """
-        Retrieve a fits image associated with a given obs_record and return the HDU off the associated cutout.
+        Retrieve a fits image associated with a given obs_record and return the list of HDUs off the associated cutout.
 
         :param obs_record: the ObsRecord for which the image is to be retrieved
         :type obs_record: mp_ephem.ObsRecord
-        :return: fits.ImageHDU
+        :return: [fits.ImageHDU, ... ]
         """
         logging.debug("Retrieving {}".format(self.image_key(obs_record)))
         try:
             image = storage.FitsImage.from_frame(obs_record.comment.frame)
-            hdu_list = image.ra_dec_cutout(obs_record.coordinate)
+            hdu_list = image.ra_dec_cutout(obs_record.coordinate, trim_to_datasec=True)
         except Exception as ex:
             logging.debug(ex)
             raise ex
