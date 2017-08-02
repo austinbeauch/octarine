@@ -152,6 +152,8 @@ def match(pixel, expnum, ccd):
 
     hpx_cat = storage.HPXCatalog(pixel=healpix, catalog_dir=master_catalog_dirname)
     hpx_cat_len = 0
+    catalog.table['MATCHES'] = 0
+    catalog.table['OVERLAPS'] = 0
 
     try:
         hpx_cat.get()
@@ -159,6 +161,15 @@ def match(pixel, expnum, ccd):
                               hpx_cat.table['Y_WORLD']))
         idx1, idx2 = util.match_lists(p1, p2, tolerance=0.5 / 3600.0)
         catalog.table['HPXID'][idx2.data[~idx2.mask]] = hpx_cat.table['HPXID'][~idx2.mask]
+        # Increase the match count for stars in the master catalog
+        hpx_cat.table['MATCHES'][~idx2.data] += 1
+        # Apply that match count to the star in the current catalog
+        catalog.table['MATCHES'][idx2.data[~idx2.mask]] = hpx_cat.table['MATCHES'][~idx2.mask]
+        # And compute the overlap between master star records and the current catalog
+        hpx_cat.table['OVERLAPS'] += \
+            [image.polygon.isInside(row['X_WORLD'], row['Y_WORLD']) for row in catalog.table]
+        catalog.table['OVERLAPS'][idx2.data[~idx2.mask]] = hpx_cat.table['OVERLAPS'][~idx2.mask]
+        for dataset_name in numpy.unique(hpx_cat.table['datasat_name']):
         hpx_cat_len = len(hpx_cat.table)
     except NotFoundException:
         logging.warning("Load of {} failed  at start.".format(hpx_cat.uri))
@@ -168,8 +179,6 @@ def match(pixel, expnum, ccd):
     cond = numpy.all((catalog.table['HPXID'] < 0,
                       catalog.table['HEALPIX'] == healpix), axis=0)
     catalog.table['HPXID'][cond] = hpx_cat_len + numpy.arange(cond.sum())
-    catalog.table['MATCHES'] = 0
-    catalog.table['OVERLAPS'] = 0
     # Now append these new source (cond) to the end of the master catalog.
     split_to_hpx(pixel, catalog, catalog_dir=master_catalog_dirname)
 
