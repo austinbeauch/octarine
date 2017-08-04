@@ -121,6 +121,7 @@ def match(pixel, expnum, ccd):
                       catalog.table['Y_WORLD'],
                       unit=('degree', 'degree'))
     catalog.table['HEALPIX'] = util.skycoord_to_healpix(ra_dec)
+    catalog.table['QRUNID'] = image.header['QRUNID']
 
     npts = numpy.sum([catalog.table['MAGERR_AUTO'] < 0.002])
     if npts < 10:
@@ -163,7 +164,9 @@ def match(pixel, expnum, ccd):
                               hpx_cat.table['Y_WORLD']))
         idx1, idx2 = util.match_lists(p1, p2, tolerance=0.5 / 3600.0)
         catalog.table['HPXID'][idx2.data[~idx2.mask]] = hpx_cat.table['HPXID'][~idx2.mask]
-        hpx_cat_len = len(hpx_cat.table)
+        hpx_cat_len = hpx_cat.table['HPXID'].max()
+        logging.info("Maximum HPXID in master catalog {} : {}".format(hpx_cat.filename, hpx_cat_len))
+        logging.info("Matched {} sources in master".format((~idx2.mask).sum()))
     except NotFoundException:
         logging.warning("Load of {} failed  at start.".format(hpx_cat.uri))
         pass
@@ -174,6 +177,8 @@ def match(pixel, expnum, ccd):
     catalog.table['HPXID'][cond] = hpx_cat_len + numpy.arange(cond.sum())
     catalog.table['MATCHES'] = 0
     catalog.table['OVERLAPS'] = 0
+    split_to_hpx(pixel, catalog, catalog_dir=master_catalog_dirname)
+    logging.info("Now Maximum HPXID is {}".format(catalog.table['HPXID'].max()))
 
     for match_set in match_list:
         logging.info("trying to match against catalog {}p{:02d}.cat.fits".format(match_set[0], match_set[1]))
@@ -253,9 +258,10 @@ def main():
     version = 'p'
 
     exit_code = 0
-    overlaps = storage.MyPolygon.from_healpix(args.healpix).cone_search(runids=storage.RUNIDS,
-                                                                        start_date=qrunid_start_date(args.qrunid),
-                                                                        end_date=qrunid_end_date(args.qrunid))
+    overlaps = storage.MyPolygon.from_healpix(args.healpix).cone_search(runids=storage.RUNIDS, start_date=None,
+                                                                        end_date=None)
+                                                                        # start_date=qrunid_start_date(args.qrunid),
+                                                                        # end_date=qrunid_end_date(args.qrunid))
     catalog_dirname = "{}/{}".format(args.catalogs, args.qrunid)
     for overlap in overlaps:
         expnum = overlap[0]

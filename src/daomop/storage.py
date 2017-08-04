@@ -270,7 +270,7 @@ class MyPolygon(Polygon.Polygon):
                         logging.debug("{} {} OVERLAPS ".format(observationID, headers.ccd))
                         overlaps.append([observationID, headers.ccd])
             except Exception as ex:
-                logging.debug("ERROR processing {}: {}".format(observationID, ex))
+                logging.error("ERROR processing {}: {}".format(observationID, ex))
                 continue
         logging.debug("Found these overlapping CCDs\n" + str(overlaps))
         return overlaps
