@@ -92,7 +92,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.candidates = None
         self.zoom = None
         self._center = None
-        self.pixel = None
+        self.healpix = None
         self.storage_list = None
         self.override = None
         self.qrun_id = None
@@ -141,9 +141,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         self.set_callback('cursor-changed', self.motion_cb)
 
-        pixel_set = Widgets.TextEntrySet()
-        pixel_set.add_callback('activated', lambda x: self.set_pixel(event=x))
-        pixel_set.set_length(6)
+        healpix_set = Widgets.TextEntrySet()
+        healpix_set.add_callback('activated', lambda x: self.set_healpix(event=x))
+        healpix_set.set_length(6)
 
         candidate_override = Widgets.TextEntrySet()
         candidate_override.add_callback('activated', lambda x: self.override_set(event=x))
@@ -186,9 +186,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
         catalog_box.set_margins(15, 0, 10, 0)  # top, right, bottom, left
 
         candidates_hbox = Widgets.HBox()
-        candidate_label = Widgets.Label(text="(Optional) Enter candidate set: ")
+        candidate_label = Widgets.Label(text="(Optional) Enter candidate set (HEALPIX): ")
         candidates_hbox.add_widget(candidate_label)
-        candidates_hbox.add_widget(pixel_set)
+        candidates_hbox.add_widget(healpix_set)
         candidates_hbox.set_margins(15, 0, 15, 0)  # top, right, bottom, left
 
         override_hbox = Widgets.HBox()
@@ -324,9 +324,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
     def lookup(self):
         """
-        Looks up which pixel value for candidate files in VOSpace.
+        Looks up which healpix value for candidate files in VOSpace.
 
-        :return pixel value for the candidate files; 0 if no candidate files have been found
+        :return healpix value for the candidate files; 0 if no candidate files have been found
         """
         count = 0
         self.length_check = False
@@ -340,9 +340,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
             # if the file extension is in the filename, then it is a file containing candidate information
             if storage.MOVING_TARGET_VERSION in filename:
-                x = re.match('(?P<hpx>HPX_)(?P<pixel>\d{5})(?P<leftover>_.*)', filename)
+                x = re.match('(?P<hpx>HPX_)(?P<healpix>\d{5})(?P<leftover>_.*)', filename)
 
-                if self.pixel is not None and int(x.group('pixel')) < self.pixel:
+                if self.healpix is not None and int(x.group('healpix')) < self.healpix:
                     continue  # skipping over json files until the specified catalog has been reached
 
                 # if the sub directory exists, we will have to check that all the candidates have been investigated
@@ -352,18 +352,18 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 # TODO: go back to server for storage_list in case two people are actively writing from unique servers
                 # cutting down the storage list for further iterating
                 self.storage_list = self.storage_list[count:]
-                return int(x.group('pixel'))
+                return int(x.group('healpix'))
         return 0
 
-    def set_pixel(self, event):
+    def set_healpix(self, event):
         """
-        Sets the pixel for the current Candidate set.
+        Sets the healpix for the current Candidate set.
 
-        :param event: Pixel value
+        :param event: healpix value
         """
         if hasattr(event, 'text'):
-            self.pixel = int(event.text)
-            self.logger.info("Set pixel as {}".format(self.pixel))
+            self.healpix = int(event.text)
+            self.logger.info("Set healpix as {}".format(self.healpix))
             if self.qrun_id is not None:
                 self.load_json.set_enabled(True)
 
@@ -393,20 +393,20 @@ class ValidateGui(ipg.EnhancedCanvasView):
             self.override = str(event.text).strip(' ')
             self.logger.info("Will override {}.".format(self.override))
 
-    def load_candidates(self, pixel=None):
+    def load_candidates(self, healpix=None):
         """
         Initial candidates loaded into the viewer. Starts up a thread pool to download images simultaneously.
 
-        :param pixel: Catalogue number containing dataset
+        :param healpix: Catalogue number containing dataset
         """
-        if pixel is None:
-            self.pixel = self.lookup()
+        if healpix is None:
+            self.healpix = self.lookup()
 
         self.buttons_off()
 
-        while self.pixel != 0 and self.set_examined():
-            self.pixel = self.lookup()
-            if self.pixel == 0:  # base case (when there are no more open candidate sets in the VOSpace directory)
+        while self.healpix != 0 and self.set_examined():
+            self.healpix = self.lookup()
+            if self.healpix == 0:  # base case (when there are no more open candidate sets in the VOSpace directory)
                 self.logger.info("No more candidate sets for this QRUNID.")
                 raise StopIteration
 
@@ -416,7 +416,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
             for obs_records in self.candidates:
                 self._download_obs_records(obs_records)
 
-        self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
+        self.candidates = candidate.CandidateSet(self.healpix, catalog_dir=self.qrun_id)
         self.candidate = None  # reset on candidate to clear it of any leftover from previous sets
         self.load()
 
@@ -487,9 +487,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         :return True if the directory is fully examined and there's no override, False if it has not been examined.
         """
-        self.logger.info("Accepted candidate entry: {}".format(self.pixel))
+        self.logger.info("Accepted candidate entry: {}".format(self.healpix))
         try:
-            self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
+            self.candidates = candidate.CandidateSet(self.healpix, catalog_dir=self.qrun_id)
             if self.length_check:
                 sub_directory = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
                                                              storage.CATALOG,
@@ -507,16 +507,16 @@ class ValidateGui(ipg.EnhancedCanvasView):
                         count += 1
 
                     # re-set self.candidates since the for loop removes all its candidates in a dequeuing fashion
-                    self.candidates = candidate.CandidateSet(self.pixel, catalog_dir=self.qrun_id)
+                    self.candidates = candidate.CandidateSet(self.healpix, catalog_dir=self.qrun_id)
 
                     # the amount of files in the accompanying subdirectory for the .json candidate file
                     directory_length = len(sub_directory)
                     if count == directory_length:
-                        self.logger.info("Candidate set {} fully examined.".format(self.pixel))
+                        self.logger.info("Candidate set {} fully examined.".format(self.healpix))
                         return True
 
                     elif count > directory_length:
-                        self.logger.info("Candidate set {} not fully examined.".format(self.pixel))
+                        self.logger.info("Candidate set {} not fully examined.".format(self.healpix))
                         return False
 
                     else:
@@ -539,13 +539,13 @@ class ValidateGui(ipg.EnhancedCanvasView):
         Performs a hard reload on all images for the case of loading errors.
         Closes current worker pool and reopens a new one.
         """
-        if self.pixel is not None:
+        if self.healpix is not None:
             self.logger.info('Reloading all candidates...')
             self.pool.terminate()
             self.pool = Pool(processes=PROCESSES)
             self.buttons_on()
             self.set_qrun_id(self.qrun_id)
-            self.load_candidates(self.pixel)
+            self.load_candidates(self.healpix)
             self.next()
 
     def load(self, obs_number=0):
@@ -736,7 +736,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         # 'vos:cfis/solar_system/dbimages/catalogs/<QRUNID>/accepted/<dataset_name>.ast
         # Since this just uploads an unintuitive name in the directory, perhaps the path could be changed to
-        #  ../accepted/<pixel>/<dataset_name>.ast
+        #  ../accepted/<healpix>/<dataset_name>.ast
         destination = os.path.join(os.path.join(os.path.dirname(storage.DBIMAGES), storage.CATALOG),
                                    self.header['QRUNID'], ACCEPTED_DIRECTORY, art.observation.dataset_name + ext)
         try:
