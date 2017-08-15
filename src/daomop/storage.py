@@ -708,16 +708,17 @@ class FitsImage(FitsArtifact):
                 cutout = "[{}:{},{}:{}]".format(cutout[1], cutout[2], cutout[3], cutout[4])
             except:
                 break
-            hdu.header['DATASEC'] = reset_datasec(cutout,
-                                                  hdu.header['DATASEC'],
-                                                  hdu.header['NAXIS1'],
-                                                  hdu.header['NAXIS2'])
-            if trim_to_datasec:
-                datasec = hdu.header['DATASEC'][1:-1].replace(':', ',').split(',')
-                d = map(int, datasec)
-                hdu.data = hdu.data[d[2] - 1:d[3], d[0] - 1:d[1]]
-                hdu.header['CRPIX1'] = hdu.header.get('CRPIX1', 0) - (d[0] - 1)
-                hdu.header['CRPIX2'] = hdu.header.get('CRPIX2', 0) - (d[0] - 1)
+            if 'DATASEC' in hdu.header:
+                hdu.header['DATASEC'] = reset_datasec(cutout,
+                                                      hdu.header['DATASEC'],
+                                                      hdu.header['NAXIS1'],
+                                                      hdu.header['NAXIS2'])
+                if trim_to_datasec:
+                    datasec = hdu.header['DATASEC'][1:-1].replace(':', ',').split(',')
+                    d = map(int, datasec)
+                    hdu.data = hdu.data[d[2] - 1:d[3], d[0] - 1:d[1]]
+                    hdu.header['CRPIX1'] = hdu.header.get('CRPIX1', 0) - (d[0] - 1)
+                    hdu.header['CRPIX2'] = hdu.header.get('CRPIX2', 0) - (d[2] - 1)
 
         if not hdu_list:
             raise OSError(errno.EFAULT, "Failed to retrieve cutout of image", self.uri)
