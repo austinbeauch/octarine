@@ -725,7 +725,7 @@ class FitsImage(FitsArtifact):
 
         # transform PV keywords to SIP in non-empty hdu.
         for hdu in hdu_list:
-            if hdu.header["NAXIS"] == 0 and "NORDFIT" not in hdu.header:
+            if hdu.header["NAXIS"] == 0 or "NORDFIT" not in hdu.header:
                 continue
             try:
                 pv_to_sip(hdu.header)
