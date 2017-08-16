@@ -730,7 +730,7 @@ class FitsImage(FitsArtifact):
             try:
                 pv_to_sip(hdu.header)
             except LinAlgError as lin_alg_error:
-                logging.error("PV_TO_SIP FAILED: {}".format(lin_alg_error))
+                logging.error("PV_TO_SIP error: {} ({})".format(lin_alg_error, self.filename))
 
         if self.ccd is None:
             # build a list of CCD headers as we didn't do a CCD based cutout so need an MEF of headers.
