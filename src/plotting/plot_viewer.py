@@ -12,12 +12,12 @@ def main():
     for name in directory:
         # HPX_02434_RA_185.6_DEC_+37.2
         x = re.match('(?P<number>\d{3,5})_', name)
-        if x.group('number') not in directory_names:
-            directory_names.append(x.group('number'))
+        if int(x.group('number')) not in directory_names:
+            directory_names.append(int(x.group('number')))
 
     while True:
         print "Enter one of: ",
-        for i in directory_names:
+        for i in sorted(directory_names):
             print i,
         print
         print "Type 'exit' to quit"
@@ -26,13 +26,17 @@ def main():
         if hpx == 'exit':
             sys.exit(0)
         else:
-            qrun = None
+            hpx_files = []
             for filename in directory:
+                if hpx in filename:
+                    hpx_files.append(filename)
+            qrun = None
+            for filename in hpx_files:
                 x = re.match('(?P<number>\d{3,5})_17AQ(?P<qrun>\d{2})', filename)
                 if qrun is None:
                     qrun = '17AQ' + x.group('qrun')
 
-                if hpx and qrun and 'density' in filename:
+                if hpx in filename and qrun in filename and 'density' in filename:
                     hdu = fits.open('./fits_data/' + filename)[0]
                     w = wcs.WCS(hdu.header)
                     plt.subplot(313, projection=w)
@@ -41,7 +45,7 @@ def main():
                     plt.xlabel('RA')
                     plt.ylabel('Dec')
 
-                elif hpx and qrun and '_mag_' in filename:
+                elif hpx in filename and qrun in filename and '_mag_' in filename:
                     hdu = fits.open('./fits_data/' + filename)[0]
                     w = wcs.WCS(hdu.header)
                     plt.subplot(311, projection=w)
@@ -50,7 +54,7 @@ def main():
                     plt.xlabel('RA')
                     plt.ylabel('Dec')
 
-                elif hpx and qrun and 'overlap' in filename:
+                elif hpx in filename and qrun in filename and 'overlap' in filename:
                     hdu = fits.open('./fits_data/' + filename)[0]
                     w = wcs.WCS(hdu.header)
                     plt.subplot(312, projection=w)
@@ -59,6 +63,8 @@ def main():
                     plt.xlabel('RA')
                     plt.ylabel('Dec')
                     plt.show()  # overlap file comes last in the directory, wait to show plots until it's reached
+                    qrun = None
+                else:
                     qrun = None
 
 

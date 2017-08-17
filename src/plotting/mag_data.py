@@ -40,9 +40,8 @@ def fits_factory(hpx):
     table_entries = [table[table['frame'] == name] for name in dataset_names]
 
     mag_lims = {}
-    print "mag lims ", len(table_entries)
+
     for table_entry in table_entries:
-        # print table_entry['frame'][0], len(table_entry['dataset_name'])
         previous_mag = None
         for mag in np.arange(table_entry['MAG_AUTO'].min(), table_entry['MAG_AUTO'].max(), 0.20):
             condition = np.all((table_entry['MAG_AUTO'] > mag, table_entry['MAG_AUTO'] <= mag + 0.2), axis=0)
@@ -112,17 +111,16 @@ def fits_factory(hpx):
 
                         if len(dataset_names) > 2:
                             l = []
-                            for frame in dataset_names:
-                                try:
+                            try:
+                                for frame in dataset_names:
                                     l.append(float(mag_lims[frame]))  # getting third faintest magnitude
-                                except KeyError:
-                                    print "Key {} not in {}.".format(frame, mag_lims)
-                                    continue
-
-                            third_faintest = sorted(l)[-3]
-                            print 'index: ({} , {})'.format(yy, xx)
-                            mag_data[yy, xx] = third_faintest
-                            overlap_data[yy, xx] = len(dataset_names)
+                                third_faintest = sorted(l)[-3]
+                                print 'index: ({} , {})'.format(yy, xx)
+                                mag_data[yy, xx] = third_faintest
+                                overlap_data[yy, xx] = len(dataset_names)
+                            except KeyError:
+                                print KeyError
+                                continue
 
             for row in mag_data:
                 if row.any() != 0:
@@ -149,7 +147,7 @@ def main():
 
         hpx = int(x.group('pix'))
 
-        if hpx not in reg and hpx == 2811:
+        if hpx not in reg and hpx > 0:
             reg.append(hpx)
             fits_factory(hpx)
 
