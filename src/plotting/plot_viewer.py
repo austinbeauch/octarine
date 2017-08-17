@@ -47,16 +47,16 @@ def load_images(hpx, hpx_files):
 
 def main():
     directory = sorted(os.listdir('./fits_data/'))
-    directory_names = []
+    hpx_values = []
     for name in directory:
         # HPX_02434_RA_185.6_DEC_+37.2
         x = re.match('(?P<number>\d{3,5})_', name)
-        if int(x.group('number')) not in directory_names:
-            directory_names.append(int(x.group('number')))
+        if int(x.group('number')) not in hpx_values:
+            hpx_values.append(int(x.group('number')))
 
     while True:
         print "Enter one of: ",
-        for i in sorted(directory_names):
+        for i in sorted(hpx_values):
             print i,
         print
         print "Hit <enter> key to view all, or type 'exit' to quit."
@@ -71,7 +71,7 @@ def main():
             sys.exit(0)
 
         if hpx == '':
-            for i in sorted(directory_names):
+            for i in sorted(hpx_values):
                 load_images(str(i), hpx_files)
 
         else:
