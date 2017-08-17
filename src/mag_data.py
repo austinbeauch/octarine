@@ -29,17 +29,21 @@ class IDX(object):
         return self.nbin
 
 
-def fits_factory(hpx, mag_image_filename, overlap_image_filename, density_image_filename):
+def fits_factory(hpx):
     print hpx
-    cat = storage.HPXCatalog(hpx, catalog_dir='catalogs/master', dest_directory='17AQ10')
+
+    cat = storage.HPXCatalog(hpx, catalog_dir='catalogs/master', dest_directory='master')
     table = cat.table
 
     table['frame'] = [dataset_name.split('p')[0] for dataset_name in table['dataset_name']]
     dataset_names = np.unique(table['frame'])
     table_entries = [table[table['frame'] == name] for name in dataset_names]
 
+    qrunids = np.unique(table['QRUNID'])
+
     mag_lims = {}
-    for table_entry in table_entries[:2000]:
+    print "mag lims ", len(table_entries)
+    for table_entry in table_entries:
         # print table_entry['frame'][0], len(table_entry['dataset_name'])
         previous_mag = None
         for mag in np.arange(table_entry['MAG_AUTO'].min(), table_entry['MAG_AUTO'].max(), 0.20):
@@ -74,49 +78,68 @@ def fits_factory(hpx, mag_image_filename, overlap_image_filename, density_image_
     header = w.to_header()
 
     print mag_data.shape[1], mag_data.shape[0]
-    if not os.path.exists(mag_image_filename) or not os.path.exists(overlap_image_filename):
-        count = 0
+    for qrun in qrunids:
+        mag_image_filename = 'fits_data/' + str(hpx) + '_' + qrun + '_mag_data.fits'
+        overlap_image_filename = 'fits_data/' + str(hpx) + '_' + qrun + '_overlap_image.fits'
+        density_image_filename = 'fits_data/' + str(hpx) + '_' + qrun + '_density_image.fits'
+        print qrun, mag_image_filename, overlap_image_filename
+        if not os.path.exists(mag_image_filename):
 
-        for xx in range(mag_data.shape[1]):
-            print count
-            count += 1
-            for yy in range(mag_data.shape[0]):
+            count = 0
+            for xx in range(mag_data.shape[1]):
+                print count
+                count += 1
+                for yy in range(mag_data.shape[0]):
 
-                ra, dec = w.all_pix2world(xx, yy, 0)
+                    ra, dec = w.all_pix2world(xx, yy, 0)
 
-                ra_cond = np.all((table['X_WORLD'] >= ra, table['X_WORLD'] < ra + PIXEL_WIDTH,
-                                  table['OVERLAPS'] > 1), axis=0)
-                dec_cond = np.all((ra_cond, table['Y_WORLD'] >= dec, table['Y_WORLD'] < dec + PIXEL_WIDTH), axis=0)
-                dataset_names = np.unique(table[dec_cond]['frame'])
+                    ra_cond = np.all((table['X_WORLD'] >= ra,
+                                      table['X_WORLD'] < ra + PIXEL_WIDTH,
+                                      table['OVERLAPS'] > 1,
+                                      table['QRUNID'] == qrun),
+                                     axis=0)
 
-                if len(dataset_names) != 0:
-                    density = float(len(table[dec_cond])) / len(dataset_names)
-                    stellar_density_data[yy, xx] = density
+                    dec_cond = np.all((ra_cond,
+                                       table['Y_WORLD'] >= dec,
+                                       table['Y_WORLD'] < dec + PIXEL_WIDTH),
+                                      axis=0)
 
-                    if len(dataset_names) > 2:
-                        l = []
-                        for frame in dataset_names:
-                            l.append(float(mag_lims[frame]))  # getting third faintest magnitude
-                        third_faintest = sorted(l)[-3]
-                        print 'index: ({} , {})'.format(yy, xx)
-                        mag_data[yy, xx] = third_faintest
-                        overlap_data[yy, xx] = len(dataset_names)
+                    dataset_names = np.unique(table[dec_cond]['frame'])
 
-        for row in mag_data:
-            if row.any() != 0:
-                mag_image = fits.PrimaryHDU(data=mag_data, header=header)
-                mag_image.writeto(mag_image_filename)
+                    if len(dataset_names) != 0:
+                        density = float(len(table[dec_cond])) / len(dataset_names)
+                        stellar_density_data[yy, xx] = density
 
-        overlap_image = fits.PrimaryHDU(data=overlap_data, header=header)
-        overlap_image.writeto(overlap_image_filename)
+                        if len(dataset_names) > 2:
+                            l = []
+                            for frame in dataset_names:
+                                try:
+                                    l.append(float(mag_lims[frame]))  # getting third faintest magnitude
+                                except KeyError:
+                                    print "Key {} not in {}.".format(frame, mag_lims)
+                                    continue
 
-        density_image = fits.PrimaryHDU(data=stellar_density_data, header=header)
-        density_image.writeto(density_image_filename)
+                            third_faintest = sorted(l)[-3]
+                            print 'index: ({} , {})'.format(yy, xx)
+                            mag_data[yy, xx] = third_faintest
+                            overlap_data[yy, xx] = len(dataset_names)
+
+            for row in mag_data:
+                if row.any() != 0:
+                    mag_image = fits.PrimaryHDU(data=mag_data, header=header)
+                    mag_image.writeto(mag_image_filename)
+
+                    overlap_image = fits.PrimaryHDU(data=overlap_data, header=header)
+                    overlap_image.writeto(overlap_image_filename)
+
+                    density_image = fits.PrimaryHDU(data=stellar_density_data, header=header)
+                    density_image.writeto(density_image_filename)
+                    break
 
 
 def main():
     directory = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
-                                             storage.CATALOG, '17AQ10'), force=True)
+                                             storage.CATALOG, 'master'), force=True)
     reg = []
     for item in directory:
         # HPX_02434_RA_185.6_DEC_+37.2
@@ -124,16 +147,14 @@ def main():
 
         hpx = int(x.group('pix'))
 
-        if hpx not in reg and hpx == 1161:
+        if hpx not in reg and hpx == 2811:
             reg.append(hpx)
             try:
-                mag_image_filename = 'fits_data/' + str(hpx) + '_mag_data.fits'
-                overlap_image_filename = 'fits_data/' + str(hpx) + '_overlap_image.fits'
-                density_image_filename = 'fits_data/' + str(hpx) + '_density_image.fits'
-                fits_factory(hpx, mag_image_filename, overlap_image_filename, density_image_filename)
+                fits_factory(hpx)
 
             except Exception as ex:
                 print ex
+                raise ex
 
     # condition = (table['OVERLAPS'] > 2)
     # hpxids = np.unique(table['HPXID'][condition][:2000])
