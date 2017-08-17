@@ -26,21 +26,12 @@ def main():
         if hpx == 'exit':
             sys.exit(0)
         else:
-            l = []
-            for filename in directory:
-                if hpx in filename:
-                    l.append(filename)  # list of all files of entered HEALPIX
-            print l
-            print sorted(l)
-            return
-
-
             qrun = None
             for filename in directory:
                 x = re.match('(?P<number>\d{3,5})_17AQ(?P<qrun>\d{2})', filename)
-
                 if qrun is None:
                     qrun = '17AQ' + x.group('qrun')
+
                 if hpx and qrun and 'density' in filename:
                     hdu = fits.open('./fits_data/' + filename)[0]
                     w = wcs.WCS(hdu.header)
