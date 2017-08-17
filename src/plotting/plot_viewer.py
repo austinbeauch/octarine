@@ -1,6 +1,16 @@
+"""
+Used for viewing images that are created by mag_data.py.
+
+Usage:
+1. Create image files or download from VOSpace into a directory called 'fits_data'
+2. $python plot_viewer.py
+3. Follow command prompts. Use ctrl+c in the terminal to shut down application any time an image is being displayed.
+"""
+
 import os
 import sys
 import re
+import numpy as np
 from matplotlib import pyplot as plt
 from astropy.io import fits
 from astropy import wcs
@@ -9,9 +19,9 @@ from astropy import wcs
 def load_images(hpx, hpx_files):
     qrun = None
     for filename in hpx_files:
-        x = re.match('(?P<number>\d{3,5})_17AQ(?P<qrun>\d{2})', filename)
+        x = re.match('(?P<number>\d{3,5})_(?P<qrun>17AQ\d{2})', filename)
         if qrun is None:
-            qrun = '17AQ' + x.group('qrun')
+            qrun = x.group('qrun')
 
         if hpx in filename and qrun in filename and 'density' in filename:
             hdu = fits.open('./fits_data/' + filename)[0]
@@ -26,7 +36,7 @@ def load_images(hpx, hpx_files):
             hdu = fits.open('./fits_data/' + filename)[0]
             w = wcs.WCS(hdu.header)
             plt.subplot(311, projection=w)
-            plt.imshow(hdu.data, origin='lower', cmap='viridis', vmin=22)
+            plt.imshow(hdu.data, origin='lower', cmap='viridis', vmin=np.min(hdu.data[np.nonzero(hdu.data)]) - 0.25)
             plt.title(x.group('number') + ' ' + qrun + ' Magnitudes')
             plt.xlabel('RA')
             plt.ylabel('Dec')
