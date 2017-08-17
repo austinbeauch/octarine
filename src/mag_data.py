@@ -39,8 +39,6 @@ def fits_factory(hpx):
     dataset_names = np.unique(table['frame'])
     table_entries = [table[table['frame'] == name] for name in dataset_names]
 
-    qrunids = np.unique(table['QRUNID'])
-
     mag_lims = {}
     print "mag lims ", len(table_entries)
     for table_entry in table_entries:
@@ -63,8 +61,6 @@ def fits_factory(hpx):
     dec_idx = IDX(table['Y_WORLD'].min(), table['Y_WORLD'].max(), PIXEL_WIDTH)
 
     mag_data = np.zeros((len(dec_idx), len(ra_idx)))
-    overlap_data = np.zeros((len(dec_idx), len(ra_idx)))
-    stellar_density_data = np.zeros((len(dec_idx), len(ra_idx)))
 
     w = wcs.WCS(naxis=2)
     w.wcs.cd = [[PIXEL_WIDTH, 0], [0, PIXEL_WIDTH]]
@@ -78,19 +74,23 @@ def fits_factory(hpx):
     header = w.to_header()
 
     print mag_data.shape[1], mag_data.shape[0]
-    for qrun in qrunids:
+    for qrun in np.unique(table['QRUNID']):
+
         mag_image_filename = 'fits_data/' + str(hpx) + '_' + qrun + '_mag_data.fits'
         overlap_image_filename = 'fits_data/' + str(hpx) + '_' + qrun + '_overlap_image.fits'
         density_image_filename = 'fits_data/' + str(hpx) + '_' + qrun + '_density_image.fits'
-        print qrun, mag_image_filename, overlap_image_filename
-        if not os.path.exists(mag_image_filename):
+        mag_data = np.zeros((len(dec_idx), len(ra_idx)))
+        overlap_data = np.zeros((len(dec_idx), len(ra_idx)))
+        stellar_density_data = np.zeros((len(dec_idx), len(ra_idx)))
+        print qrun, mag_image_filename
 
+        if not os.path.exists(density_image_filename):
             count = 0
             for xx in range(mag_data.shape[1]):
                 print count
                 count += 1
-                for yy in range(mag_data.shape[0]):
 
+                for yy in range(mag_data.shape[0]):
                     ra, dec = w.all_pix2world(xx, yy, 0)
 
                     ra_cond = np.all((table['X_WORLD'] >= ra,
@@ -126,15 +126,17 @@ def fits_factory(hpx):
 
             for row in mag_data:
                 if row.any() != 0:
+                    # only write these files if there's data that has been inserted
                     mag_image = fits.PrimaryHDU(data=mag_data, header=header)
                     mag_image.writeto(mag_image_filename)
 
                     overlap_image = fits.PrimaryHDU(data=overlap_data, header=header)
                     overlap_image.writeto(overlap_image_filename)
-
-                    density_image = fits.PrimaryHDU(data=stellar_density_data, header=header)
-                    density_image.writeto(density_image_filename)
                     break
+
+            # write the stellar density image regardless so it's not regathered again
+            density_image = fits.PrimaryHDU(data=stellar_density_data, header=header)
+            density_image.writeto(density_image_filename)
 
 
 def main():
@@ -149,12 +151,7 @@ def main():
 
         if hpx not in reg and hpx == 2811:
             reg.append(hpx)
-            try:
-                fits_factory(hpx)
-
-            except Exception as ex:
-                print ex
-                raise ex
+            fits_factory(hpx)
 
     # condition = (table['OVERLAPS'] > 2)
     # hpxids = np.unique(table['HPXID'][condition][:2000])

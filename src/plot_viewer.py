@@ -45,7 +45,7 @@ def main():
                     hdu = fits.open('./fits_data/' + filename)[0]
                     w = wcs.WCS(hdu.header)
                     plt.subplot(311, projection=w)
-                    plt.imshow(hdu.data, origin='lower', cmap='binary')
+                    plt.imshow(hdu.data, origin='lower', cmap='viridis', vmin=22)
                     plt.title(x.group('number') + ' ' + qrun + ' Magnitudes')
                     plt.xlabel('RA')
                     plt.ylabel('Dec')
