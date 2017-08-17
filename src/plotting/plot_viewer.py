@@ -58,7 +58,7 @@ def main():
                     plt.title(x.group('number') + ' ' + qrun + ' Overlaps')
                     plt.xlabel('RA')
                     plt.ylabel('Dec')
-                    plt.show()
+                    plt.show()  # overlap file comes last in the directory, wait to show plots until it's reached
                     qrun = None
 
 
