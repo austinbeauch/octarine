@@ -7,6 +7,7 @@ from astropy import wcs
 from daomop import storage
 
 PIXEL_WIDTH = 90.0/3600.0
+FITS_DIRECTORY = 'fits_data/'
 
 
 class IDX(object):
@@ -68,9 +69,9 @@ def fits_factory(hpx):
     for qrun in np.unique(table['QRUNID']):
 
         # set file names and reset data arrays for each qrunid
-        mag_image_filename = 'fits_data/' + str(hpx) + '_' + qrun + '_mag_data.fits'
-        overlap_image_filename = 'fits_data/' + str(hpx) + '_' + qrun + '_overlap_image.fits'
-        density_image_filename = 'fits_data/' + str(hpx) + '_' + qrun + '_density_image.fits'
+        mag_image_filename = FITS_DIRECTORY + str(hpx) + '_' + qrun + '_mag_data.fits'
+        overlap_image_filename = FITS_DIRECTORY + str(hpx) + '_' + qrun + '_overlap_image.fits'
+        density_image_filename = FITS_DIRECTORY + str(hpx) + '_' + qrun + '_density_image.fits'
         mag_data = np.zeros((len(dec_idx), len(ra_idx)))
         overlap_data = np.zeros((len(dec_idx), len(ra_idx)))
         stellar_density_data = np.zeros((len(dec_idx), len(ra_idx)))
@@ -143,45 +144,6 @@ def main():
         if hpx not in reg and hpx > 0:  # alter 'hpx > 0' to use specific files
             reg.append(hpx)
             fits_factory(hpx)
-
-    # condition = (table['OVERLAPS'] > 2)
-    # hpxids = np.unique(table['HPXID'][condition][:2000])
-    # x = table['MAG_AUTO']
-    # y = table['MAGERR_AUTO']
-    # idx = np.random.choice(np.arange(len(x)), 1000)
-    # x, y = x[idx], y[idx]
-    # xx, yy = np.meshgrid(x, y)
-    # plt.plot(xx, yy, '.')
-    # plt.show()
-    # magni2ds = {}
-    # for data_set in table_entries:
-    #     nearest_magerr = find_nearest(data_set['MAGERR_AUTO'], 0.2)
-    #     condition = (table['MAGERR_AUTO'] == nearest_magerr)
-    #     nearest_magnitude = float(table['MAG_AUTO'][condition])
-    #     magni2ds[np.unique(data_set['dataset_name']).tostring().rstrip('\x00')] = [nearest_magerr, nearest_magnitude]
-    # cat = storage.HPXCatalog(1161, catalog_dir='catalogs/master', dest_directory='master')
-    # table = cat.table
-    # mags = [table[table['HPXID'] == hpxid]['MAG_AUTO'] for hpxid in hpxids]
-    # stds = [(numpy.std(x)) for x in mags]
-    # plt.plot(table['MAGERR_AUTO'][:2000], stds, 'x', alpha=0.7)
-    # plt.ylabel("std")
-    # plt.xlabel("mag error")
-    # plt.show()
-    # mean_mag = []
-    # for i in mags:
-    #     mean_mag.append(numpy.mean(i))
-    # plt.subplot(121)
-    # plt.plot(mean_mag, stds, '.', alpha=0.7)
-    # plt.ylim(ymin=-0.05, ymax=3/2)
-    # # plt.xlim(xmin=0)
-    # plt.ylabel("magnitude standard deviation")
-    # plt.xlabel("average magnitude")
-    # plt.subplot(122)
-    # plt.plot(mean_mag, table['MAGERR_AUTO'][:2000], '.', alpha=0.7)
-    # plt.ylabel("magnitude error")
-    # plt.xlabel("average magnitude")
-    # plt.ylim(ymin=-0.05, ymax=3/2)
-    # plt.show()
 
 
 if __name__ == "__main__":
