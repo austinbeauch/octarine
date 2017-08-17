@@ -9,14 +9,6 @@ from daomop import storage
 PIXEL_WIDTH = 90.0/3600.0
 
 
-def find_nearest(array, value):
-    return array[(np.abs(array-value)).argmin()]
-
-
-def arduino_map(x, in_min, in_max, out_min, out_max):
-    return (x - in_min) * (out_max - out_min) // (in_max - in_min) + out_min
-
-
 class IDX(object):
     def __init__(self, range_min, range_max, width):
         self.min = range_min
@@ -75,6 +67,7 @@ def fits_factory(hpx):
     print mag_data.shape[1], mag_data.shape[0]
     for qrun in np.unique(table['QRUNID']):
 
+        # set file names and reset data arrays for each qrunid
         mag_image_filename = 'fits_data/' + str(hpx) + '_' + qrun + '_mag_data.fits'
         overlap_image_filename = 'fits_data/' + str(hpx) + '_' + qrun + '_overlap_image.fits'
         density_image_filename = 'fits_data/' + str(hpx) + '_' + qrun + '_density_image.fits'
@@ -132,7 +125,7 @@ def fits_factory(hpx):
                     overlap_image.writeto(overlap_image_filename)
                     break
 
-            # write the stellar density image regardless so it's not regathered again
+            # write the stellar density image regardless so it's not regathered again in case of empty mag_data
             density_image = fits.PrimaryHDU(data=stellar_density_data, header=header)
             density_image.writeto(density_image_filename)
 
@@ -147,7 +140,7 @@ def main():
 
         hpx = int(x.group('pix'))
 
-        if hpx not in reg and hpx > 0:
+        if hpx not in reg and hpx > 0:  # alter 'hpx > 0' to use specific files
             reg.append(hpx)
             fits_factory(hpx)
 
