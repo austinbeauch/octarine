@@ -27,7 +27,6 @@ def std(hpx):
     plt.subplot(121)
     plt.plot(mean_mag, stds, '.', alpha=0.7)
     plt.ylim(ymin=-0.05, ymax=3/2)
-    # plt.xlim(xmin=0)
     plt.ylabel("magnitude standard deviation")
     plt.xlabel("average magnitude")
 
@@ -36,6 +35,16 @@ def std(hpx):
     plt.ylabel("magnitude error")
     plt.xlabel("average magnitude")
     plt.ylim(ymin=-0.05, ymax=3/2)
+    plt.show()
+
+    plt.plot()
+    plt.hist([table['MAGERR_AUTO'][index] / i for index, i in enumerate(stds) if i != 0],
+             50,
+             range=(-0.2, 5))
+
+    plt.xlabel("Magnitude Error / Magnitude St. Deviation")
+    plt.ylabel("Frequency")
+    plt.title("Histogram of MAGERR_AUTO / Magnitude Standard Deviation")
     plt.show()
 
 
