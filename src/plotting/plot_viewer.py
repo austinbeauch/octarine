@@ -19,7 +19,7 @@ from astropy import wcs
 def load_images(hpx, hpx_files):
     qrun = None
     for filename in hpx_files:
-        x = re.match('(?P<number>\d{3,5})_(?P<qrun>17AQ\d{2})', filename)
+        x = re.match('(?P<number>\d{3,5})_(?P<qrun>\d{2}[A-z]{2}\d{2})', filename)
         if qrun is None:
             qrun = x.group('qrun')
 
