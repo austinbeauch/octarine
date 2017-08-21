@@ -110,6 +110,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.clear_button = Widgets.Button("Clear")
         self.yes_button = Widgets.Button("Yes")
         self.no_button = Widgets.Button("No")
+        self.reload_button = Widgets.Button("Reload")
         self.warning = Widgets.Label("In case you try to reject a previously accepted candidate: ")
 
         self.legend = Widgets.TextArea(wrap=True)
@@ -152,7 +153,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         astfile = Widgets.TextEntry(editable=True)
         astfile.add_callback('activated', lambda x: self.load_astfile(event=x))
 
-        catalog = Widgets.TextEntrySet(text='17AQ06')
+        catalog = Widgets.TextEntrySet(text='17AQ03')
         catalog.add_callback('activated', lambda x: self.set_qrun_id(x))
         catalog.set_length(5)
 
@@ -162,9 +163,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.next_set.add_callback('activated', lambda x: self.next())
         self.previous_set.add_callback('activated', lambda x: self.previous())
         self.clear_button.add_callback('activated', lambda x: self.clear_viewer())
-
-        reload_button = Widgets.Button("Reload")
-        reload_button.add_callback('activated', lambda x: self.reload_candidates())
+        self.reload_button.add_callback('activated', lambda x: self.reload_candidates())
 
         # accept/reject/next buttons
         buttons_hbox = Widgets.HBox()
@@ -173,7 +172,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         buttons_hbox.add_widget(self.reject)
         buttons_hbox.add_widget(self.next_set)
         buttons_hbox.add_widget(self.load_json)
-        buttons_hbox.add_widget(reload_button)
+        buttons_hbox.add_widget(self.reload_button)
         buttons_hbox.add_widget(self.clear_button)
         self.load_json.set_enabled(False)
         buttons_hbox.set_spacing(3)
@@ -631,7 +630,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         """
         try:
             catalog_dir = os.path.join(storage.CATALOG,
-                                       self.header['QRUNID'],
+                                       self.qrun_id,
                                        self.candidates.catalog.catalog.dataset_name)
 
             art = storage.ASTRecord(self.candidate[0].provisional_name,
@@ -873,6 +872,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.reject.set_enabled(True)
         self.clear_button.set_enabled(True)
         self.load_json.set_enabled(True)
+        self.reload_button.set_enabled(True)
 
     def buttons_off(self):
         """
@@ -884,6 +884,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.reject.set_enabled(False)
         self.clear_button.set_enabled(False)
         self.load_json.set_enabled(False)
+        self.reload_button.set_enabled(False)
 
     @property
     def center(self):
