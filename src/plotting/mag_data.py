@@ -145,7 +145,7 @@ def main():
 
         hpx = int(x.group('pix'))
 
-        if hpx not in reg and hpx > 1500:  # alter 'hpx > 0' to use specific files
+        if hpx not in reg and hpx > 0:  # alter 'hpx > 0' to use specific files
             reg.append(hpx)
             fits_factory(hpx)
 
