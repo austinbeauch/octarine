@@ -376,6 +376,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                     self.candidate.append(obs_record)
             except:
                 logging.warning("Failed to parse line >{}<".format(line))
+                return
         self.logger.info("Accepted AST file.")
         self.candidates = [self.candidate]
         self.next_set.set_enabled(False)
