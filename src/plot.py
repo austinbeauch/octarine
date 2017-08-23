@@ -8,16 +8,20 @@ Usage:
      - generate sky coverage scatter plots using data from /fits_data/
 
 Optional:
-1. [--std]
-    - generates standard deviation files from master catalogs and store them in /mag_std_data/
+1. [--hist]
+    - plot histograms using data from the directory /mag_std_data/
 
-2. [--hist]
-    - generates histograms using data from the directory /mag_std_data/
+2. [--std]
+    - generates standard deviation data files from master catalogs and store them in /mag_std_data/
+
+3. [--mag]
+    - generate flux limit coverage/overlaps data files and store them in /fits_data/
+    - data files available to download from VOSpace under /cfis/solar_system/characterization
 """
 
 import argparse
 from daomop import storage
-from plotting import plot_viewer, st_deviation
+from plotting import plot_viewer, st_deviation, mag_data
 
 
 if __name__ == "__main__":
@@ -27,10 +31,14 @@ if __name__ == "__main__":
                         help="Plot histograms")
     parser.add_argument("--std", dest="std", default=False, action="store_true",
                         help="Run st_deviation_plot.py to generate standard deviation data files.")
+    parser.add_argument("--mag", dest="mag", default=False, action="store_true",
+                        help="Run mag_data.py to generate coverage data files.")
 
     args = parser.parse_args()
 
     if args.std:
         st_deviation.main()
+    elif args.mag:
+        mag_data.main()
     else:
         plot_viewer.main(args)

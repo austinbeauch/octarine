@@ -9,6 +9,9 @@ In main(), alter the line
 to be
     > if hpx not in reg and hpx == <HEALPIX>:
 to generate files for a single catalog.
+
+Usage:
+~/octarine/src$ python plot.py --mag
 """
 
 import os
@@ -163,7 +166,3 @@ def main():
         if hpx not in reg and hpx > 0:  # alter 'hpx > 0' to use specific files
             reg.append(hpx)
             fits_factory(hpx)
-
-
-if __name__ == "__main__":
-    main()
