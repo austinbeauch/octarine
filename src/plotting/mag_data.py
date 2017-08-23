@@ -39,6 +39,21 @@ class IDX(object):
 
 
 def fits_factory(hpx):
+    """
+    Generate FITS data files from master catalog on VOSpace. Three files will be created per QRUNID per catalog.
+    Each file is created via binning the XWORLD/YWORLD sky plots, with the condition that the flux limit > 0.15.
+    Each bin is 90"x90".
+
+    The first data file will be a coverage plot where each pixel contains the third faintest magnitude for that bin (
+    this requires >2 data points in the pixel).
+    The second file will contain the amount of object detected in the bin.
+    The third file will be the stellar density, and does not require there to be >2 data points in the bin.
+
+    In the case where there are no satisfying data points for the first two files, only the stellar density file will
+    be written.
+
+    :param hpx: HEALPIX value to specify which catalog to build images from
+    """
     try:
         print hpx
 
