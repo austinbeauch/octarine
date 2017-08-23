@@ -1,5 +1,6 @@
 """
 Used for viewing images that are created by mag_data.py. Called from plot.py in /src/ directory.
+Defaults to viewing area coverage plots. Une --hist to view standard deviation histograms.
 
 Usage:
 ~/octarine/src$ python plot.py [--hist]
