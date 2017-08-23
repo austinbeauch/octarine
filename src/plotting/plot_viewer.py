@@ -1,10 +1,8 @@
 """
-Used for viewing images that are created by mag_data.py.
+Used for viewing images that are created by mag_data.py. Called from plot.py in /src/ directory.
 
 Usage:
-1. Create image files or download from VOSpace into a directory called 'fits_data'
-2. $python plot_viewer.py
-3. Follow command prompts. Use ctrl+c in the terminal to shut down application any time an image is being displayed.
+~/octarine/src$ python plot.py [--hist]
 """
 
 import os
@@ -15,16 +13,30 @@ from matplotlib import pyplot as plt
 from astropy.io import fits
 from astropy import wcs
 
+from daomop import storage
+
+FITS_DATA_DIR = 'plotting/fits_data/'
+MAG_STD_DIR = 'plotting/mag_std_data/'
+
 
 def load_images(hpx, hpx_files):
+    """
+    Generate a figure consisting of 3 plots for each of magnitudes, overlaps, and stellar densities.
+
+    :param hpx: HEALPIX value
+    :param hpx_files: List of all HEALPIX values from present files
+    """
     qrun = None
+
+    # hpx_files is sorted, allowing a simple iteration over the list
     for filename in hpx_files:
         x = re.match('(?P<number>\d{3,5})_(?P<qrun>\d{2}[A-z]{2}\d{2})', filename)
+
         if qrun is None:
             qrun = x.group('qrun')
 
         if hpx in filename and qrun in filename and 'density' in filename:
-            hdu = fits.open('./fits_data/' + filename)[0]
+            hdu = fits.open(FITS_DATA_DIR + filename)[0]
             w = wcs.WCS(hdu.header)
             plt.subplot(313, projection=w)
             plt.imshow(hdu.data, origin='lower', cmap='binary')
@@ -33,7 +45,7 @@ def load_images(hpx, hpx_files):
             plt.ylabel('Dec')
 
         elif hpx in filename and qrun in filename and '_mag_' in filename:
-            hdu = fits.open('./fits_data/' + filename)[0]
+            hdu = fits.open(FITS_DATA_DIR + filename)[0]
             w = wcs.WCS(hdu.header)
             plt.subplot(311, projection=w)
             plt.imshow(hdu.data, origin='lower', cmap='viridis', vmin=np.min(hdu.data[np.nonzero(hdu.data)]) - 0.25)
@@ -42,21 +54,61 @@ def load_images(hpx, hpx_files):
             plt.ylabel('Dec')
 
         elif hpx in filename and qrun in filename and 'overlap' in filename:
-            hdu = fits.open('./fits_data/' + filename)[0]
+            hdu = fits.open(FITS_DATA_DIR + filename)[0]
             w = wcs.WCS(hdu.header)
             plt.subplot(312, projection=w)
             plt.imshow(hdu.data, origin='lower', cmap='binary')
             plt.title(x.group('number') + ' ' + qrun + ' Overlaps')
             plt.xlabel('RA')
             plt.ylabel('Dec')
-            plt.show()  # overlap file comes last in the directory, wait to show plots until it's reached
-            qrun = None
+            plt.show()  # overlap file comes last in the directory, wait to show the figure until it's reached
+            qrun = None  # reset qrun to move onto next QRUNID set
+
         else:
             qrun = None
 
 
-def main():
-    directory = sorted(os.listdir('./fits_data/'))
+def load_stds(hpx, hpx_files):
+    """
+    Generates a histogram from the standard deviations of magnitudes in a given catalog (identified by its HEALPIX)
+
+    :param hpx: HEALPIX value
+    :param hpx_files: List of all HEALPIX values from present files
+    """
+    cat = storage.HPXCatalog(int(hpx), catalog_dir='catalogs/master', dest_directory='master')
+    table = cat.table
+    condition = (table['MATCHES'] > 2)
+    hpxids = np.unique(table['HPXID'][condition])
+    stds = None
+
+    for filename in hpx_files:
+        if str(hpx) in filename and 'magnitudes' in filename:
+            mags = fits.open(MAG_STD_DIR + filename)[0]
+        elif str(hpx) in filename and 'stds' in filename:
+            stds = fits.open(MAG_STD_DIR + filename)[0].data
+
+    if stds is not None:
+        plt.hist(stds / table['MAGERR_AUTO'][:len(hpxids)], bins=100, range=(-0.25, 10))
+        # plt.hist([table['MAGERR_AUTO'][index] / i for index, i in enumerate(stds) if i != 0],
+        #          50,
+        #          range=(-0.2, 5))
+        plt.xlabel("Magnitude St. Deviation / Magnitude Error ")
+        plt.ylabel("Frequency")
+        plt.title(str(hpx) + " Histogram of Magnitude Standard Deviation / MAGERR_AUTO")
+        plt.show()
+    else:
+        print "Data files for HPX {} not written.".format(hpx)
+
+
+def main(params):
+    if params.hist:
+        direc = MAG_STD_DIR
+        func = load_stds
+    else:
+        direc = FITS_DATA_DIR
+        func = load_images
+
+    directory = sorted(os.listdir(direc))
     hpx_values = []
     for name in directory:
         # HPX_02434_RA_185.6_DEC_+37.2
@@ -82,11 +134,7 @@ def main():
 
         if hpx == '':
             for i in sorted(hpx_values):
-                load_images(str(i), hpx_files)
+                func(str(i), hpx_files)
 
         else:
-            load_images(hpx, hpx_files)
-
-
-if __name__ == '__main__':
-    main()
+            func(hpx, hpx_files)

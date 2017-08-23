@@ -1,3 +1,16 @@
+"""
+FITS data file generator. Writes sky coverage plots from source master catalogs on VOSpace. Generates 3 unique files
+for every QRUNID in each master catalog (unless the data files are empty, in which only a single file is written to
+signify zero data).
+
+Defaulted to generate data files from every master catalog.
+In main(), alter the line
+    > if hpx not in reg and hpx > 0:
+to be
+    > if hpx not in reg and hpx == <HEALPIX>:
+to generate files for a single catalog.
+"""
+
 import os
 import numpy as np
 import re
@@ -78,6 +91,7 @@ def fits_factory(hpx):
             stellar_density_data = np.zeros((len(dec_idx), len(ra_idx)))
             print qrun, mag_image_filename
 
+            # if the density file exists, this set has been examined/written before and can be skipped
             if not os.path.exists(density_image_filename):
                 count = 0
                 for xx in range(mag_data.shape[1]):
@@ -130,6 +144,7 @@ def fits_factory(hpx):
                 # write the stellar density image regardless so it's not regathered again in case of empty mag_data
                 density_image = fits.PrimaryHDU(data=stellar_density_data, header=header)
                 density_image.writeto(density_image_filename)
+
     except Exception as ex:
         print ex
         return
