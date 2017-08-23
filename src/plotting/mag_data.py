@@ -23,7 +23,7 @@ from astropy import wcs
 from daomop import storage
 
 PIXEL_WIDTH = 90.0/3600.0
-FITS_DIRECTORY = 'fits_data/'
+FITS_DIRECTORY = 'plotting/fits_data/'
 
 
 class IDX(object):
@@ -154,6 +154,9 @@ def fits_factory(hpx):
 
 
 def main():
+    if not os.path.exists(FITS_DIRECTORY):
+        os.mkdir(FITS_DIRECTORY)
+
     directory = storage.listdir(os.path.join(os.path.dirname(storage.DBIMAGES),
                                              storage.CATALOG, 'master'), force=True)
     reg = []
