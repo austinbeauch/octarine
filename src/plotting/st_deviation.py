@@ -1,5 +1,7 @@
 """
-Generate .FITS data files containing magnitude standard deviations from master catalog tables.
+Generate .FITS data files containing magnitude standard deviation, mean magnitude, and mean magnitude error from master
+catalog tables.
+
 Called from plot.py in /src/ directory.
 
 Usage:
@@ -9,8 +11,8 @@ Usage:
 import os
 import numpy as np
 import re
+from astropy.table import Table, Column
 
-from astropy.io import fits
 from daomop import storage
 
 MAG_STD_DATA_DIRECTORY = 'plotting/mag_std_data/'
@@ -18,30 +20,36 @@ MAG_STD_DATA_DIRECTORY = 'plotting/mag_std_data/'
 
 def std(hpx):
     """
-    Generate a data file containing the standard deviations of magnitudes in a given catalog with MATCHES > 2
+    Generate a table containing the magnitude standard deviation, mean magnitude value, and mean magnitude error value.
+    Puts the resulting table to VOSpace in the from of a FITS file.
 
     :param hpx: catalog HEALPIX
     """
     mag_filename = MAG_STD_DATA_DIRECTORY + str(hpx) + '_magnitudes.fits'
     std_filename = MAG_STD_DATA_DIRECTORY + str(hpx) + '_stds.fits'
 
-    if not os.path.exists(std_filename):
+    if not os.path.exists(std_filename) or not os.path.exists(mag_filename):
         cat = storage.HPXCatalog(hpx, catalog_dir='catalogs/master', dest_directory='master')
         table = cat.table
+        art = storage.Artifact(storage.Observation(int(hpx)), version="", subdir='catalogs', ext='stds.fits')
 
         condition = (table['MATCHES'] > 2)
-        hpxids = np.unique(table['HPXID'][condition])
+        hpxids = np.unique(table['HPXID'][condition][:10])
         print len(hpxids)
         mags = np.array([table[table['HPXID'] == hpxid]['MAG_AUTO'] for hpxid in hpxids])
+        mag_err = np.array([table[table['HPXID'] == hpxid]['MAGERR_AUTO'] for hpxid in hpxids])
+
+        mean_magerr = [(np.mean(x)) for x in mag_err]
         stds = [(np.std(x)) for x in mags]
+        mean_mag = [(np.mean(x)) for x in mags]
 
-        # if os.path.exists(mag_filename):
-        #     os.remove(mag_filename)
-        # mag_image = fits.PrimaryHDU(data=mags)
-        # mag_image.writeto(mag_filename)
+        table = Table()
+        table.add_column(Column(stds, name='mag_std'))
+        table.add_column(Column(mean_mag, name='mag_mean'))
+        table.add_column(Column(mean_magerr, name='magerr_mean'))
+        table.write(art.filename, format='fits', overwrite=True)
 
-        std_image = fits.PrimaryHDU(data=stds)
-        std_image.writeto(std_filename)
+        art.put()
 
 
 def main():
@@ -57,6 +65,6 @@ def main():
 
         hpx = int(x.group('pix'))
 
-        if hpx not in reg and hpx > 0:  # alter 'hpx > 0' to use specific files
+        if hpx not in reg and hpx == 1363:  # alter 'hpx > 0' to use specific files
             reg.append(hpx)
             std(hpx)
