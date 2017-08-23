@@ -30,7 +30,7 @@ def std(hpx):
         table = cat.table
 
         condition = (table['MATCHES'] > 2)
-        hpxids = np.unique(table['HPXID'][condition][:100])
+        hpxids = np.unique(table['HPXID'][condition])
         print len(hpxids)
         mags = np.array([table[table['HPXID'] == hpxid]['MAG_AUTO'] for hpxid in hpxids])
         stds = [(np.std(x)) for x in mags]
