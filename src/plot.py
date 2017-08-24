@@ -43,6 +43,6 @@ if __name__ == "__main__":
     elif args.lat:
         latidutes.main()
     else:
-        parser.error('No action requested, add exactly one argument')
+        parser.error('No action requested, add exactly one argument (use -h to see shorthand notation)')
 
 __doc__ = description

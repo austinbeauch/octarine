@@ -16,23 +16,22 @@ def latitude_factory(hpx, hpx_files):
     :param hpx: HEALPIX value
     :param hpx_files: List of all HEALPIX values from present files in /mag_data/
     """
-    # hpx_files is sorted, allowing a simple iteration over the list
+
+    if len(hpx) == 3:
+        hpx = '0' + hpx
+
+    helio_data = np.zeros(90)
+    helio_filename = HELIO_DATA_DIR + hpx + '_latitude_counts.fits'
+
+    if os.path.exists(helio_filename):
+        return
+
     for filename in hpx_files:
         if hpx in filename and '_mag_' in filename:
-            x = re.match('(?P<number>\d{3,5})_(?P<qrun>\d{2}[A-z]{2}\d{2})', filename)
-            qrun = x.group('qrun')
-            if len(hpx) == 3:
-                hpx = '0' + hpx
+            print filename
 
             hdu = fits.open(FITS_DATA_DIR + filename)[0]
             w = wcs.WCS(hdu.header)
-
-            helio_data = np.zeros(90)
-            helio_filename = HELIO_DATA_DIR + hpx + '_' + qrun + '_latitude_counts.fits'
-            print helio_filename, os.path.exists(helio_filename)
-
-            if os.path.exists(helio_filename):
-                continue
 
             for i in range(hdu.data.shape[0]):
                 for j in range(hdu.data.shape[1]):
@@ -45,9 +44,9 @@ def latitude_factory(hpx, hpx_files):
                     count = 0.000625 * 10 ** (0.9 * (hdu.data[i, j] - 23.4))
                     helio_data[int(coord.lat.deg)] += count
 
-            # print helio_data
-            mag_image = fits.PrimaryHDU(data=helio_data)
-            mag_image.writeto(helio_filename)
+    if helio_data.any() != 0:
+        mag_image = fits.PrimaryHDU(data=helio_data)
+        mag_image.writeto(helio_filename)
 
 
 def main():

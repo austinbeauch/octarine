@@ -101,6 +101,8 @@ def fits_factory(hpx):
         for qrun in np.unique(table['QRUNID']):
 
             # set file names and reset data arrays for each qrunid
+            if len(str(hpx)) == 3:
+                hpx = '0' + str(hpx)
             mag_image_filename = FITS_DIRECTORY + str(hpx) + '_' + qrun + '_mag_data.fits'
             overlap_image_filename = FITS_DIRECTORY + str(hpx) + '_' + qrun + '_overlap_image.fits'
             density_image_filename = FITS_DIRECTORY + str(hpx) + '_' + qrun + '_density_image.fits'

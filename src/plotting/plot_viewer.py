@@ -106,12 +106,12 @@ def latitude_counts(hpx, hpx_files):
 
     for filename in sorted(hpx_files):
         if hpx in filename:
-            x = re.match('(?P<hpx>\d{3,4})_(?P<qrun>\d{2}[A-z]{2}\d{2}).*', filename)
+            x = re.match('(?P<hpx>\d{4}).*', filename)
             data = fits.open(HELIO_DATA_DIR + filename)[0].data
-            plt.hist(data, bins=90)
-            plt.xlabel("Expected number of objects")
+            plt.plot(data, '.')
+            plt.xlabel("Latitude")
             plt.ylabel("Frequency")
-            plt.title(x.group('hpx') + " " + x.group('qrun') + " Histogram of expected object counts")
+            plt.title(x.group('hpx') + " Histogram of expected object counts")
             plt.show()
 
 
