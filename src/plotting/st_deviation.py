@@ -34,7 +34,7 @@ def std(hpx):
         art = storage.Artifact(storage.Observation(int(hpx)), version="", subdir='catalogs', ext='stds.fits')
 
         condition = (table['MATCHES'] > 2)
-        hpxids = np.unique(table['HPXID'][condition][:10])
+        hpxids = np.unique(table['HPXID'][condition])
         print len(hpxids)
         mags = np.array([table[table['HPXID'] == hpxid]['MAG_AUTO'] for hpxid in hpxids])
         mag_err = np.array([table[table['HPXID'] == hpxid]['MAGERR_AUTO'] for hpxid in hpxids])
@@ -48,7 +48,6 @@ def std(hpx):
         table.add_column(Column(mean_mag, name='mag_mean'))
         table.add_column(Column(mean_magerr, name='magerr_mean'))
         table.write(art.filename, format='fits', overwrite=True)
-
         art.put()
 
 
@@ -64,7 +63,10 @@ def main():
         x = re.match('HPX_(?P<pix>\d{5})_RA_(?P<ra>\d{3}\.\d)_DEC_\+(?P<dec>\d{2}\.\d)', item)
 
         hpx = int(x.group('pix'))
-
-        if hpx not in reg and hpx == 1363:  # alter 'hpx > 0' to use specific files
-            reg.append(hpx)
-            std(hpx)
+        try:
+            if hpx not in reg and hpx > 0:  # alter 'hpx > 0' to use specific files
+                reg.append(hpx)
+                std(hpx)
+        except TypeError as err:
+            print err
+            continue
