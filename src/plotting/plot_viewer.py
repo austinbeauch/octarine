@@ -138,6 +138,10 @@ def main(params):
         if int(x.group('number')) not in hpx_values:
             hpx_values.append(int(x.group('number')))
 
+    if len(hpx_values) == 0:
+        print "Data files not found. Empty directory: {}".format(direc)
+        sys.exit(0)
+
     while True:
         print "Enter one of: ",
         for i in sorted(hpx_values):
