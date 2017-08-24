@@ -103,20 +103,16 @@ def load_stds(hpx, hpx_files):
 
 
 def latitude_counts(hpx, hpx_files):
-    cond = True
-    while cond:
-        for filename in hpx_files:
-            if hpx in filename:
-                x = re.match('(?P<hpx>\d{3,4})_(?P<qrun>\d{2}[A-z]{2}\d{2}).*', filename)
-                data = fits.open(HELIO_DATA_DIR + filename)[0].data
-                plt.hist(data, bins=90)
-                plt.xlabel("Expected number of objects")
-                plt.ylabel("Frequency")
-                plt.title(x.group('hpx') + "  " + x.group('qrun') + " Histogram of expected object counts")
-                plt.show()
-            else:
-                cond = False
 
+    for filename in sorted(hpx_files):
+        if hpx in filename:
+            x = re.match('(?P<hpx>\d{3,4})_(?P<qrun>\d{2}[A-z]{2}\d{2}).*', filename)
+            data = fits.open(HELIO_DATA_DIR + filename)[0].data
+            plt.hist(data, bins=90)
+            plt.xlabel("Expected number of objects")
+            plt.ylabel("Frequency")
+            plt.title(x.group('hpx') + " " + x.group('qrun') + " Histogram of expected object counts")
+            plt.show()
 
 def main(params):
     if params.std_hist:
@@ -157,7 +153,7 @@ def main(params):
         if hpx == 'exit':
             sys.exit(0)
 
-        if hpx == '':
+        elif hpx == '':
             for i in sorted(hpx_values):
                 func(str(i), hpx_files)
 
