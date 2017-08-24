@@ -40,4 +40,6 @@ if __name__ == "__main__":
         import pdb
         pdb.run('daomop.viewer.main(options)')
 
+    print "WebValidate set to run at: http://{}:{}/app".format(options.host, options.port)
+
     daomop.viewer.main(options)
