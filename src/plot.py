@@ -1,34 +1,47 @@
 description = """
 Small command line application for using plot_viewer.py to plot/visualize data from generated .FITS files.
-Also used to run st_deviation.py and mag_data.py for generating magnitude standard deviation data files.
+Also used to run data file generation scripts.
 """
 
+import sys
 import argparse
 from daomop import storage
-from plotting import plot_viewer, st_deviation, mag_data
-
+from plotting import plot_viewer, st_deviation, mag_data, latidutes
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=description)
 
-    parser.add_argument("--cov", dest="cov", default=False, action="store_true",
-                        help="Plot sky coverage per magnitude, overlaps, and stellar densities from data in "
-                             "/fits_data/")
-    parser.add_argument("--hist", dest="hist", default=False, action="store_true",
-                        help="Plot histograms using data in /mag_std_data/")
-    parser.add_argument("--std", dest="std", default=False, action="store_true",
+    parser.add_argument("--std-histogram", "-sh", dest="std_hist", default=False, action="store_true",
+                        help="Create magnitude standard deviation histograms.")
+
+    parser.add_argument("--latitude-count", "-lc", dest="lat_count", default=False, action="store_true",
+                        help="Create object count per latitude histograms.")
+
+    parser.add_argument("--sky-coverage", "-sc", dest="sky_cov", default=False, action="store_true",
+                        help="Plot sky coverage data.")
+
+    parser.add_argument("--st-deviation", "-std", dest="std", default=False, action="store_true",
                         help="Run st_deviation_plot.py to generate standard deviation data files.")
-    parser.add_argument("--mag", dest="mag", default=False, action="store_true",
+
+    parser.add_argument("--magnitudes", "-mag", dest="mag", default=False, action="store_true",
                         help="Run mag_data.py to generate coverage data files.")
+
+    parser.add_argument("--latitudes", "-lat", dest="lat", default=False, action="store_true",
+                        help="Run latitudes.py to generate object count per latitude data files.")
 
     args = parser.parse_args()
 
-    if args.std:
+    if len(sys.argv[1:]) > 1:
+        parser.error("Too many arguments: expected exactly one. Use -h for help.")
+
+    elif args.std_hist or args.lat_count or args.sky_cov:
+        plot_viewer.main(args)
+    elif args.std:
         st_deviation.main()
     elif args.mag:
         mag_data.main()
-    elif args.cov:
-        plot_viewer.main(args)
+    elif args.lat:
+        latidutes.main()
     else:
         parser.error('No action requested, add exactly one argument')
 

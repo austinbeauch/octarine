@@ -16,6 +16,7 @@ from astropy import wcs
 
 from daomop import storage
 
+HELIO_DATA_DIR = 'plotting/heliocentric_data/'
 FITS_DATA_DIR = 'plotting/fits_data/'
 MAG_STD_DIR = 'plotting/mag_std_data/'
 
@@ -101,15 +102,32 @@ def load_stds(hpx, hpx_files):
         print "Data files for HPX {} not written.".format(hpx)
 
 
+def latitude_counts(hpx, hpx_files):
+    for filename in sorted(hpx_files):
+        data = fits.open(HELIO_DATA_DIR + filename)[0].data
+        plt.hist(data, bins=90)
+        plt.xlabel("Expected number of objects")
+        plt.ylabel("Frequency")
+        plt.title(hpx + " Histogram of expected object counts")
+        plt.show()
+
+
 def main(params):
-    if params.hist:
+    if params.std_hist:
         direc = MAG_STD_DIR
         func = load_stds
+    elif params.lat_count:
+        direc = HELIO_DATA_DIR
+        func = latitude_counts
     else:
         direc = FITS_DATA_DIR
         func = load_images
 
-    directory = sorted(os.listdir(direc))
+    try:
+        directory = sorted(os.listdir(direc))
+    except OSError as ex:
+        raise ex
+
     hpx_values = []
     for name in directory:
         # HPX_02434_RA_185.6_DEC_+37.2
