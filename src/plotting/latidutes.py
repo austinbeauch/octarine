@@ -18,19 +18,21 @@ def latitude_factory(hpx, hpx_files):
     """
     # hpx_files is sorted, allowing a simple iteration over the list
     for filename in hpx_files:
-        x = re.match('(?P<number>\d{3,5})_(?P<qrun>\d{2}[A-z]{2}\d{2})', filename)
-        qrun = x.group('qrun')
-
         if hpx in filename and '_mag_' in filename:
-            print filename
+            x = re.match('(?P<number>\d{3,5})_(?P<qrun>\d{2}[A-z]{2}\d{2})', filename)
+            qrun = x.group('qrun')
+            if len(hpx) == 3:
+                hpx = '0' + hpx
+
             hdu = fits.open(FITS_DATA_DIR + filename)[0]
             w = wcs.WCS(hdu.header)
 
             helio_data = np.zeros(90)
-            if len(hpx) == 3:
-                hpx = '0' + hpx
             helio_filename = HELIO_DATA_DIR + hpx + '_' + qrun + '_latitude_counts.fits'
-            print helio_filename
+            print helio_filename, os.path.exists(helio_filename)
+
+            if os.path.exists(helio_filename):
+                continue
 
             for i in range(hdu.data.shape[0]):
                 for j in range(hdu.data.shape[1]):
@@ -60,10 +62,5 @@ def main():
         if int(x.group('number')) not in hpx_values:
             hpx_values.append(int(x.group('number')))
 
-    while True:
-        hpx_files = []
-        for filename in directory:
-                hpx_files.append(filename)
-
-        for i in sorted(hpx_values):
-            latitude_factory(str(i), hpx_files)
+    for i in sorted(hpx_values):
+        latitude_factory(str(i), sorted(directory))

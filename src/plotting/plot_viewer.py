@@ -114,6 +114,7 @@ def latitude_counts(hpx, hpx_files):
             plt.title(x.group('hpx') + " " + x.group('qrun') + " Histogram of expected object counts")
             plt.show()
 
+
 def main(params):
     if params.std_hist:
         direc = MAG_STD_DIR
