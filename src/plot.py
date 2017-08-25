@@ -1,6 +1,6 @@
 description = """
-Small command line application for using plot_viewer.py to plot/visualize data from generated .FITS files.
-Also used to run data file generation scripts.
+Small command line application for using plot_viewer.py to plot/visualize data from generated .FITS files and to run 
+data file generation scripts.
 """
 
 import sys
@@ -12,22 +12,22 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=description)
 
     parser.add_argument("--std-histogram", "-sh", dest="std_hist", default=False, action="store_true",
-                        help="Create magnitude standard deviation histograms.")
+                        help="PLOT: Create magnitude standard deviation histograms.")
 
-    parser.add_argument("--latitude-count", "-lc", dest="lat_count", default=False, action="store_true",
-                        help="Create object count per latitude histograms.")
+    parser.add_argument("--object-count", "-oc", dest="lat_count", default=False, action="store_true",
+                        help="PLOT: Create object count per latitude histograms.")
 
     parser.add_argument("--sky-coverage", "-sc", dest="sky_cov", default=False, action="store_true",
-                        help="Plot sky coverage data.")
+                        help="PLOT: Create sky coverage data scatter plots.")
 
     parser.add_argument("--st-deviation", "-std", dest="std", default=False, action="store_true",
                         help="Run st_deviation_plot.py to generate standard deviation data files.")
 
-    parser.add_argument("--magnitudes", "-mag", dest="mag", default=False, action="store_true",
-                        help="Run mag_data.py to generate coverage data files.")
-
     parser.add_argument("--latitudes", "-lat", dest="lat", default=False, action="store_true",
                         help="Run latitudes.py to generate object count per latitude data files.")
+
+    parser.add_argument("--magnitudes", "-mag", dest="mag", default=False, action="store_true",
+                        help="Run mag_data.py to generate coverage data files.")
 
     args = parser.parse_args()
 
