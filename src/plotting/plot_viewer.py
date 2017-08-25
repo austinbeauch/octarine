@@ -1,9 +1,6 @@
 """
-Used for viewing images that are created by mag_data.py. Called from plot.py in /src/ directory.
-Defaults to viewing area coverage plots. Une --hist to view standard deviation histograms.
-
-Usage:
-~/octarine/src$ python plot.py [--hist]
+General image plotting/visualization script. Called from plot.py using optional arguments to specify which plots to
+create. Depends on data files being stored locally in correct directories.
 """
 
 import os
@@ -84,13 +81,12 @@ def load_stds(hpx, hpx_files):
     stds = None
 
     for filename in hpx_files:
-        if str(hpx) in filename and 'magnitudes' in filename:
-            mags = fits.open(MAG_STD_DIR + filename)[0]
-        elif str(hpx) in filename and 'stds' in filename:
-            stds = fits.open(MAG_STD_DIR + filename)[0].data
+        if str(hpx) in filename and 'stds' in filename:
+            stds = fits.open(MAG_STD_DIR + filename)[1]
+            break
 
     if stds is not None:
-        plt.hist(stds / table['MAGERR_AUTO'][:len(hpxids)], bins=100, range=(-0.25, 10))
+        plt.hist(stds.data.field('mag_std') / table['MAGERR_AUTO'][:len(hpxids)], bins=100, range=(-0.25, 10))
         # plt.hist([table['MAGERR_AUTO'][index] / i for index, i in enumerate(stds) if i != 0],
         #          50,
         #          range=(-0.2, 5))
@@ -134,7 +130,7 @@ def main(params):
     hpx_values = []
     for name in directory:
         # HPX_02434_RA_185.6_DEC_+37.2
-        x = re.match('(?P<number>\d{3,5})_', name)
+        x = re.match('(?P<number>\d{3,5})', name)
         if int(x.group('number')) not in hpx_values:
             hpx_values.append(int(x.group('number')))
 

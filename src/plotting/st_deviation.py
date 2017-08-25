@@ -69,4 +69,3 @@ def main():
                 std(hpx)
         except TypeError as err:
             print err
-            continue
