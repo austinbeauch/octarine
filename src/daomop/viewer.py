@@ -323,7 +323,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
     def lookup(self):
         """
-        Looks up which healpix value for candidate files in VOSpace.
+        Determines which healpix values is to be examined next. The healpix value is eventually used when creating the
+        candidate set.
 
         :return healpix value for the candidate files; 0 if no candidate files have been found
         """
